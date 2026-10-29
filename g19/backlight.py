@@ -7,11 +7,15 @@ La connexion au SDK reste ouverte : la couper ferait aussi disparaître l'appli 
 Dans LGS, l'option « Autoriser les jeux à contrôler l'éclairage » doit être active.
 """
 import ctypes
+import json
 import logging
 import os
 import threading
 import time
 from collections import deque
+from pathlib import Path
+
+import psutil
 
 log = logging.getLogger("g19")
 
@@ -20,6 +24,7 @@ DLL = os.environ.get("G19_LED_DLL",
 DEVICE_RGB = 0x2 | 0x1     # LOGI_DEVICETYPE_RGB | MONOCHROME
 INFINITE = 0
 RETRY = 2                   # s avant de retenter une initialisation ratée
+WARN_EVERY = 300            # s entre deux avertissements du même problème dans le journal
 TICK = 0.02                 # s entre deux pas de l'animation
 
 # état → (effet, r, g, b en %, intervalle ms)
@@ -32,6 +37,28 @@ EFFECTS = {
     "notif": ("blink", 100, 100, 100, 0),
 }
 BLINK_PERIOD = 300          # ms pour un clignotement (allumé puis éteint)
+
+# réglages de LGS : « Permettre le contrôle de l'éclairage par le jeu » = mainwindow.enableLEDSDK.
+# Décochée, LGS accepte les commandes du SDK sans rien appliquer (aucune erreur côté appli).
+LGS_SETTINGS = Path(os.environ.get("LOCALAPPDATA", "")) / "Logitech" / \
+    "Logitech Gaming Software" / "settings.json"
+
+
+def lgs_started_at():
+    """Heure de lancement de LGS (LCore.exe), None s'il ne tourne pas."""
+    for p in psutil.process_iter(["name", "create_time"]):
+        if (p.info["name"] or "").lower() == "lcore.exe":
+            return p.info["create_time"]
+    return None
+
+
+def lgs_led_sdk_enabled():
+    """L'option de LGS telle qu'enregistrée (True / False), None si illisible."""
+    try:
+        data = json.loads(LGS_SETTINGS.read_text("utf-8-sig"))
+        return bool(data["mainwindow"]["enableLEDSDK"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 class Backlight:
@@ -53,6 +80,7 @@ class Backlight:
         self._key = None            # (état, vitesse) déjà appliqué
         self._state = None
         self._next_try = 0.0
+        self._warned = {}           # problème → dernier avertissement (journal)
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -112,7 +140,8 @@ class Backlight:
         if self._dll is None:
             dll = ctypes.CDLL(DLL)
             for fn in ("LogiLedInit", "LogiLedStopEffects", "LogiLedSaveCurrentLighting",
-                       "LogiLedRestoreLighting"):
+                       "LogiLedRestoreLighting", "LogiLedSetTargetDevice", "LogiLedSetLighting",
+                       "LogiLedFlashLighting", "LogiLedPulseLighting"):
                 getattr(dll, fn).restype = ctypes.c_bool
             dll.LogiLedSetTargetDevice.argtypes = [ctypes.c_int]
             dll.LogiLedSetLighting.argtypes = [ctypes.c_int] * 3
@@ -128,16 +157,32 @@ class Backlight:
             return False
         try:
             d = self._load()
-        except OSError:
+        except OSError as e:
             self._next_try = time.time() + 30
+            self._warn("dll", "rétroéclairage : SDK LED introuvable (%s)", e)
             return False
         if not d.LogiLedInit():
             self._next_try = time.time() + RETRY
+            self._warn("init", "rétroéclairage : connexion au SDK LED refusée — LGS lancé ? "
+                       "« Autoriser les jeux à contrôler l'éclairage » coché ?")
             return False
         time.sleep(0.3)  # LGS a besoin d'un instant avant d'accepter les commandes
-        d.LogiLedSetTargetDevice(DEVICE_RGB)
+        if not d.LogiLedSetTargetDevice(DEVICE_RGB):
+            self._warn("target", "rétroéclairage : LGS refuse de cibler le clavier")
         self._active = True
+        log.info("rétroéclairage : connecté au SDK LED")
         return True
+
+    def _warn(self, what, msg, *args):
+        now = time.time()
+        if now - self._warned.get(what, 0) >= WARN_EVERY:
+            self._warned[what] = now
+            log.warning(msg, *args)
+
+    def _check(self, ok, what):
+        """Une commande refusée par LGS (éclairage pris par une autre appli…) : notée."""
+        if not ok:
+            self._warn(what, "rétroéclairage : commande %s refusée par LGS", what)
 
     def _restore(self):
         """Couleur de repos, ou éclairage sauvegardé avant le premier effet."""
@@ -192,14 +237,14 @@ class Backlight:
             name, on = state
             _kind, r, g, b, _ = EFFECTS[name]
             r, g, b = self.colors.get(name) or (r, g, b)
-            d.LogiLedSetLighting(*((r, g, b) if on else (0, 0, 0)))
+            self._check(d.LogiLedSetLighting(*((r, g, b) if on else (0, 0, 0))), "couleur")
             return
         kind, r, g, b, interval = EFFECTS[state]
         r, g, b = self.colors.get(state) or (r, g, b)
         interval = interval or self.pulse_ms
         if kind == "solid":
-            d.LogiLedSetLighting(r, g, b)
+            self._check(d.LogiLedSetLighting(r, g, b), "couleur")
         elif kind == "flash":
-            d.LogiLedFlashLighting(r, g, b, INFINITE, interval)
+            self._check(d.LogiLedFlashLighting(r, g, b, INFINITE, interval), "clignotement")
         else:
-            d.LogiLedPulseLighting(r, g, b, INFINITE, interval)
+            self._check(d.LogiLedPulseLighting(r, g, b, INFINITE, interval), "pulsation")

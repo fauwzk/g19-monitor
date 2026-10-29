@@ -375,6 +375,7 @@ class Ctx:
     pages_hidden: set = None     # pages masquées faute d'appli lancée
     pages_event: tuple = None    # (titre, texte, horodatage) : une page masquée revient
     agent_event: tuple = None    # (titre, texte, horodatage) : appli lancée par un agent Claude
+    lgs_event: tuple = None      # (titre, texte, horodatage) : LGS bloque le rétroéclairage
     git: object = None           # git_status.GitStatus
     away: object = None          # away.Away (PC au repos, résumé d'absence)
     saved_event: tuple = None    # (titre, texte, horodatage) : réglages enregistrés ailleurs
@@ -2452,6 +2453,10 @@ def toast_candidates(c, page, t):
     if ue:
         cands.append((ue[2], {"source": "Mise à jour", "title": ue[0], "body": ue[1],
                               "icon": None, "color": OK if "mis à jour" in ue[0] else ACCENT}))
+    le = c.lgs_event
+    if le:
+        cands.append((le[2], {"source": "LGS", "title": le[0], "body": le[1], "icon": None,
+                              "color": WARN}))
     ae = c.agent_event
     if ae:
         cands.append((ae[2], {"source": "Attention", "title": ae[0], "body": ae[1], "icon": None,

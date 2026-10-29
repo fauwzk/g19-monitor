@@ -53,7 +53,7 @@ try:
     from g19.streaming import Streaming
     from g19.away import Away
     from g19.git_status import GitStatus
-    from g19.backlight import Backlight
+    from g19.backlight import Backlight, lgs_led_sdk_enabled, lgs_started_at
     from g19.claude_status import claude_running, read_sessions
     from g19.claude_usage import ClaudeUsage
     from g19.steam_live import SteamLive
@@ -301,6 +301,21 @@ def launched_by_agent():
     return any(os.environ.get(k) for k in AGENT_ENV)
 
 
+def check_lgs_lighting(c, now, checked_for):
+    """LGS lancé avec « Permettre le contrôle de l'éclairage par le jeu » décochée : le clavier
+    ne clignote plus, sans aucune erreur. Bandeau une fois par lancement de LGS (son fichier de
+    réglages n'est relu qu'une minute après son démarrage, le temps qu'il l'écrive)."""
+    started = lgs_started_at()
+    if not started or started == checked_for or now - started < 60:
+        return checked_for
+    if lgs_led_sdk_enabled() is False:
+        log.warning("LGS : « Permettre le contrôle de l'éclairage par le jeu » est décochée, "
+                    "le rétroéclairage ne peut pas changer")
+        c.lgs_event = ("Rétroéclairage bloqué par LGS",
+                       "coche « Permettre le contrôle de l'éclairage par le jeu »", now)
+    return started
+
+
 def visible_pages(c, cfg):
     """Pages réglées, sans celles des applis qui ne tournent pas (Discord, Docker) : elles
     reviennent d'elles-mêmes au lancement de l'appli, le réglage n'est pas touché."""
@@ -386,6 +401,8 @@ def run():
         log.warning("lancée depuis une session Claude Code : réglages peut-être isolés de ceux "
                     "de l'utilitaire ; relancer l'appli depuis Windows (start_g19.pyw)")
     agent_warned = 0.0
+    lgs_checked_for = None      # lancement de LGS déjà vérifié (une fois par lancement)
+    last_lgs_check = 0.0
     dog = Watchdog()           # couvre aussi le démarrage (écran, capteurs, ventilos)
 
     watch = settings.Watcher()
@@ -445,6 +462,10 @@ def run():
                 guarded("historique", c.history.add, c.stats, c.gpu.s, now)
                 guarded("réseau", c.net.check_alert, bool(c.gpu.game), now)
                 guarded("absence", lambda: c.away.update(c, now, toast_candidates(c, None, now)))
+                if cfg["backlight"] and now - last_lgs_check >= 60:
+                    last_lgs_check = now
+                    lgs_checked_for = guarded("LGS", check_lgs_lighting, c, now, lgs_checked_for) \
+                        or lgs_checked_for
                 if agent and now - agent_warned >= AGENT_WARN_EVERY:
                     agent_warned = now
                     c.agent_event = ("Lancée par un agent Claude",
