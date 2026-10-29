@@ -11,7 +11,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from . import render as R
 
-SHAPED = ("aero", "analog", "hud", "tron", "paper", "paper_dark", "pixel")
+SHAPED = ("aero", "analog", "hud", "tron", "paper", "paper_dark", "pixel", "xp")
 PAPERS = ("paper", "paper_dark")
 _cache = {}
 
@@ -136,6 +136,9 @@ def canvas(name):
 
 def title_bar(d, name):
     W = R.W
+    if name == "xp":
+        _xp_title_bar(d)
+        return True
     if name == "aero":
         glass(d, (-4, -4, W + 3, 24), 0, R.mix(R.BG, (0, 0, 0), 0.4), 0.55, shine=True,
               outline=R.mix(R.ACCENT, R.BG, 0.3))
@@ -175,6 +178,9 @@ def title_bar(d, name):
 
 def panel(d, box, r, outline, width, color, name):
     x0, y0, x1, y1 = (int(v) for v in box)
+    if name == "xp":
+        d.rounded_rectangle(box, min(r, 3), fill=color, outline=outline or XP_BORDER, width=width)
+        return True
     if name == "aero":
         return glass(d, box, r, R.mix(color, (0, 0, 0), 0.25), 0.5, shine=True, outline=outline,
                      width=width)
@@ -231,6 +237,9 @@ def bar(d, x, y, w, h, frac, color, name):
     frac = max(0.0, min(frac, 1.0))
     x, y, w, h = int(x), int(y), int(w), int(h)
     fw = int(w * frac)
+    if name == "xp":
+        _xp_bar(d, x, y, w, h, frac, color)
+        return True
     if name == "analog":
         d.rectangle((x, y, x + w, y + h), fill=R.mix(R.TRACK, (0, 0, 0), 0.35),
                     outline=R.mix(R.ACCENT, R.PANEL, 0.5))
@@ -287,6 +296,9 @@ def bar(d, x, y, w, h, frac, color, name):
 def sparkline(d, x, y, w, h, values, color, vmax, panel_color, name):
     vals = list(values)
     x, y, w, h = int(x), int(y), int(w), int(h)
+    if name == "xp":
+        _xp_graph(d, x, y, w, h, vals, color, vmax, bool(panel_color))
+        return True
     if name == "pixel":
         if panel_color:
             d.rectangle((x, y, x + w, y + h), fill=panel_color)
@@ -354,6 +366,9 @@ def sparkline(d, x, y, w, h, values, color, vmax, panel_color, name):
 
 def gauge(d, cx, cy, r, frac, color, value, unit, label, name):
     frac = max(0.0, min(frac, 1.0))
+    if name == "xp":
+        _xp_gauge(d, cx, cy, r, frac, color, value, unit, label)
+        return True
     if name == "analog":
         return _needle(d, cx, cy, r, frac, color, value, unit, label)
     if name == "hud":
@@ -455,6 +470,79 @@ def _needle(d, cx, cy, r, frac, color, value, unit, label):
     d.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill=brass, outline=R.mix(brass, (0, 0, 0), 0.4))
     d.text((cx, cy + rb + 9), label, font=R.font(10), fill=R.MUTED, anchor="mm")
     return True
+
+
+# --- Windows XP (bleu Luna) ----------------------------------------------------------------------
+
+XP_BORDER = (127, 157, 185)      # bord des contrôles
+XP_BLUE = ((61, 149, 255), (0, 88, 238), (0, 72, 214), (0, 46, 156))
+
+
+def _xp_title_bar(d):
+    W = R.W
+    hi, top, mid, low = XP_BLUE
+    for y in range(25):
+        if y < 3:
+            c = R.mix(hi, top, y / 3)
+        elif y < 12:
+            c = R.mix(top, mid, (y - 3) / 9)
+        else:
+            c = R.mix(mid, (0, 60, 190), (y - 12) / 12)
+        d.line((0, y, W, y), fill=c)
+    d.line((0, 0, W, 0), fill=(120, 180, 255))
+    d.line((0, 24, W, 24), fill=low)
+
+
+def _xp_bar(d, x, y, w, h, frac, color):
+    """Barre de progression XP : piste blanche bordée, blocs dégradés espacés."""
+    d.rounded_rectangle((x, y, x + w, y + h), 2, fill=(255, 255, 255), outline=XP_BORDER)
+    inner_h = h - 2
+    if inner_h < 1:
+        return
+    fw = int((w - 2) * frac)
+    block, gap = max(3, min(7, inner_h + 2)), 2
+    bx = x + 1
+    while bx + 1 < x + 1 + fw:
+        bw = min(block, x + 1 + fw - bx)
+        for k in range(inner_h):
+            f = k / max(1, inner_h - 1)
+            c = R.mix(R.mix(color, (255, 255, 255), 0.55), color, min(1.0, f * 2.2)) if f < 0.45 \
+                else R.mix(color, R.mix(color, (0, 0, 0), 0.25), (f - 0.45) / 0.55)
+            d.line((bx, y + 1 + k, bx + bw - 1, y + 1 + k), fill=c)
+        bx += block + gap
+
+
+def _xp_graph(d, x, y, w, h, values, color, vmax, with_bg):
+    """Graphe du gestionnaire des tâches : fond noir, grille verte, tracé vif."""
+    if with_bg:
+        d.rectangle((x, y, x + w, y + h), fill=(0, 0, 0))
+        for gx in range(x + 12, x + w, 12):
+            d.line((gx, y, gx, y + h), fill=(0, 100, 50))
+        for gy in range(y + h - 10, y, -10):
+            d.line((x, gy, x + w, gy), fill=(0, 100, 50))
+    vals = list(values)
+    if len(vals) < 2:
+        return
+    line = R.mix(color, (255, 255, 255), 0.25) if with_bg else color
+    pts = [(x + i * w / (len(vals) - 1), y + h - 1 - (h - 2) * min(v, vmax) / vmax)
+           for i, v in enumerate(vals)]
+    d.line(pts, fill=line, width=1)
+
+
+def _xp_gauge(d, cx, cy, r, frac, color, value, unit, label):
+    d.ellipse((cx - r - 2, cy - r - 2, cx + r + 2, cy + r + 2), fill=(255, 255, 255),
+              outline=XP_BORDER)
+    box = (cx - r + 3, cy - r + 3, cx + r - 3, cy + r - 3)
+    d.arc(box, 135, 405, fill=(226, 230, 236), width=6)
+    segs = 15
+    for k in range(segs):          # blocs comme la barre de progression, sur l'arc
+        if (k + 0.5) / segs > frac:
+            break
+        a0 = 135 + k * 270 / segs + 2
+        d.arc(box, a0, a0 + 270 / segs - 4, fill=color, width=6)
+    d.text((cx, cy - 2), value, font=R.font(15, True), fill=R.TEXT, anchor="mm")
+    d.text((cx, cy + 12), unit, font=R.font(9), fill=R.MUTED, anchor="mm")
+    d.text((cx, cy + r + 9), label, font=R.font(10), fill=R.MUTED, anchor="mm")
 
 
 # --- dernière passe ------------------------------------------------------------------------------

@@ -1,19 +1,24 @@
 # Installation de G19 Monitor sur ce PC (sans droits administrateur).
 # Lancé par Installer.cmd ; options pour un essai : -Dest dossier -NoLaunch -NoShortcuts -NoPip
-# -Startup yes|no -Hooks yes|no
+# -NoStop (ne pas arrêter l'appli en cours) -Startup yes|no -Hooks yes|no
 param(
     [string]$Dest = (Join-Path $env:LOCALAPPDATA "Programs\G19Monitor"),
     # dépôt GitHub (écrit par build_package.py) : le dossier installé en est un clone, ce qui
     # permet les mises à jour automatiques ; vide = simple copie des fichiers du paquet
     [string]$Repo = "__REPO__",
     [string]$Branch = "__BRANCH__",
+    # (les marqueurs __…__ ci-dessus sont remplacés par build_package.py)
     [ValidateSet("ask", "yes", "no")][string]$Startup = "ask",
     [ValidateSet("ask", "yes", "no")][string]$Hooks = "ask",
     [switch]$NoLaunch,
     [switch]$NoShortcuts,
-    [switch]$NoPip
+    [switch]$NoPip,
+    [switch]$NoStop
 )
-$ErrorActionPreference = "Stop"
+# pas "Stop" : sous Windows PowerShell 5, la moindre ligne que git ou python écrit sur stderr
+# (une simple astuce de « git init »…) deviendrait une erreur fatale ; les codes de retour
+# sont vérifiés à chaque étape
+$ErrorActionPreference = "Continue"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src = Join-Path $here "app"
 
@@ -39,11 +44,17 @@ function Find-Python {
     $cands += Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe",
         "$env:ProgramFiles\Python3*\python.exe" -ErrorAction SilentlyContinue |
         ForEach-Object FullName
+    $found = @()
     foreach ($p in ($cands | Select-Object -Unique)) {
         $v = & $p -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
-        if ($v -and [version]$v -ge [version]"3.10") { return $p }
+        if ($v -and [version]$v -ge [version]"3.10") {
+            $found += [pscustomobject]@{ Path = $p; Version = [version]$v }
+        }
     }
-    return $null
+    if (-not $found) { return $null }
+    $ok = $found | Where-Object { $_.Version -le [version]"3.13" } | Sort-Object Version -Descending
+    if ($ok) { return @($ok)[0].Path }
+    return @($found | Sort-Object Version -Descending)[0].Path
 }
 
 Say "Installation de G19 Monitor" "White"
@@ -71,7 +82,8 @@ if (-not (Test-Path $pyw)) { $pyw = $py }
 Say "Python : $py"
 
 Step "Arrêt d'une version déjà installée"
-if (Test-Path (Join-Path $Dest "g19_monitor.py")) {
+if ($NoStop) { Say "ignoré (-NoStop)" }
+elseif (Test-Path (Join-Path $Dest "g19_monitor.py")) {
     & $py (Join-Path $Dest "g19_monitor.py") --stop 2>$null | Out-Null
     Say "ok"
 } else { Say "aucune" }
@@ -90,23 +102,23 @@ function Install-FromGit($git) {
     # est repris : les fichiers suivis sont remplacés par ceux du dépôt
     New-Item -ItemType Directory -Force $Dest | Out-Null
     if (-not (Test-Path (Join-Path $Dest ".git"))) {
-        & $git -C $Dest init -q
-        & $git -C $Dest remote add origin $Repo
+        & $git -C $Dest init -q 2>&1 | Out-Null
+        & $git -C $Dest remote add origin $Repo 2>&1 | Out-Null
     }
-    & $git -C $Dest fetch -q origin $Branch
+    & $git -C $Dest fetch -q origin $Branch 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { return $false }
-    & $git -C $Dest checkout -q -f -B $Branch "origin/$Branch"
+    & $git -C $Dest checkout -q -f -B $Branch "origin/$Branch" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { return $false }
-    & $git -C $Dest branch -q --set-upstream-to "origin/$Branch" $Branch
+    & $git -C $Dest branch -q --set-upstream-to "origin/$Branch" $Branch 2>&1 | Out-Null
     return $true
 }
 
 Step "Code de l'appli"
 $fromGit = $false
-if ($Repo -and $Repo -ne "__REPO__") {
+if ($Repo -and $Repo -notlike "__*__") {      # « __REPO__ » : paquet construit hors dépôt git
     $git = Find-Git
     if (-not $git -and (Get-Command winget -ErrorAction SilentlyContinue) -and
-        (Ask "Installer Git (nécessaire pour les mises à jour automatiques) ?" "ask")) {
+        (Ask "Installer Git (nécessaire pour les mises à jour automatiques ; Windows demandera les droits administrateur) ?" "ask")) {
         winget install -e --id Git.Git --silent --accept-package-agreements --accept-source-agreements
         $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" +
             [Environment]::GetEnvironmentVariable("Path", "Machine")

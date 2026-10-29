@@ -173,7 +173,7 @@ BLINK_SPEEDS = {"lent": 600, "normal": 300, "rapide": 180}  # ms par clignotemen
 # thèmes de l'écran (voir render.THEMES)
 THEMES = ("dark", "light", "g19", "g15", "neon", "dynamic", "contrast", "glacier", "braise",
           "terminal", "red", "aero", "analog", "hud", "tron", "paper", "paper_dark",
-          "pixel")
+          "pixel", "xp")
 
 
 def load():

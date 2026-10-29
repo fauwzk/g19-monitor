@@ -1,7 +1,7 @@
 # G19 Monitor
 
 **Une deuxième vie pour l'écran couleur du clavier Logitech G19.** Les infos du PC, les jeux,
-la musique, Discord, Steam, les agents Claude Code… sur l'écran 320×240 du clavier, avec 18
+la musique, Discord, Steam, les agents Claude Code… sur l’écran 320×240 du clavier, avec 19
 thèmes, un menu au clavier et un utilitaire de réglages. Windows, Python.
 
 ![Trois écrans dans trois thèmes : Système (G19), Média (Aero), GPU en jeu (Cadrans)](docs/images/hero.png)
@@ -56,13 +56,13 @@ direct d'un écran du PC, panneau des ventilateurs, bandeaux qui glissent depuis
 
 ## Thèmes
 
-Dix-huit thèmes, au choix dans le menu du G19 ou l'utilitaire (qui prend les mêmes couleurs).
+Dix-neuf thèmes, au choix dans le menu du G19 ou l’utilitaire (qui prend les mêmes couleurs).
 Certains ne changent que les couleurs ; d'autres changent la forme des éléments : panneaux
 vernis et LED du **G19 (origine)**, verre d'**Aero**, aiguilles des **Cadrans analogiques**,
 coins de cadre du **HUD cockpit**, contours lumineux de **Tron**, hachures des **Papiers**,
-blocs du **Pixel 8 bits**.
+blocs du **Pixel 8 bits**, barre de titre bleue et barres de progression de **Windows XP**.
 
-![Les 18 thèmes sur la page GPU](docs/images/themes.png)
+![Les 19 thèmes sur la page GPU](docs/images/themes.png)
 
 - **Fond d'écran** : en option dans tous les thèmes, le fond d'écran Windows flouté derrière
   les pages, chaque thème gardant son style (panneaux légèrement translucides).

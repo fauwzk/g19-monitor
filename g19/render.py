@@ -129,6 +129,16 @@ PAPER_DARK = {**DARK, "BG": (30, 29, 32), "PANEL": (44, 42, 44), "TRACK": (92, 8
               "WARN": (236, 194, 96), "HOT": (240, 112, 102), "CLAUDE": (238, 152, 112),
               "DISCORD": (150, 160, 255), "STEAM_BLUE": (110, 196, 245),
               "STEAM_GAME": (176, 220, 100)}
+# Windows XP : corps de fenêtre beige, contrôles blancs à bord bleu-gris, barre de titre bleue
+# (texte blanc dessus : HEAD_*), barres façon barre de progression, graphes du gestionnaire des
+# tâches ; police Tahoma
+XP = {**LIGHT, "BG": (236, 233, 216), "PANEL": (255, 255, 255), "TRACK": (198, 205, 214),
+      "TEXT": (0, 0, 0), "MUTED": (72, 72, 72), "ACCENT": (0, 78, 210),
+      "GPU_C": (150, 50, 160), "RAM_C": (0, 110, 200), "OK": (30, 150, 30),
+      "WARN": (210, 130, 0), "HOT": (200, 20, 20), "CLAUDE": (196, 90, 50),
+      "DISCORD": (70, 80, 210), "STEAM_BLUE": (0, 100, 170), "STEAM_GAME": (70, 130, 20),
+      "HEAD_TEXT": (255, 255, 255), "HEAD_MUTED": (200, 220, 255),
+      "HEAD_ACCENT": (255, 255, 255)}
 PIXEL = {**DARK, "BG": (12, 12, 28), "PANEL": (36, 36, 76), "TRACK": (76, 76, 124),
          "TEXT": (252, 252, 252), "MUTED": (188, 188, 204), "ACCENT": (60, 188, 252),
          "GPU_C": (248, 120, 88), "RAM_C": (184, 120, 248), "OK": (88, 216, 84),
@@ -137,16 +147,18 @@ PIXEL = {**DARK, "BG": (12, 12, 28), "PANEL": (36, 36, 76), "TRACK": (76, 76, 12
 THEMES = {"dark": DARK, "light": LIGHT, "g19": G19, "g15": G15, "neon": NEON,
           "dynamic": DARK, "contrast": CONTRAST, "glacier": GLACIER, "braise": BRAISE,
           "terminal": TERMINAL, "red": NIGHT_RED, "aero": AERO, "analog": ANALOG, "hud": HUD,
-          "tron": TRON, "paper": PAPER, "paper_dark": PAPER_DARK, "pixel": PIXEL}
+          "tron": TRON, "paper": PAPER, "paper_dark": PAPER_DARK, "pixel": PIXEL, "xp": XP}
 THEME_LABELS = {"dark": "Sombre", "light": "Clair", "g19": "G19 (origine)",
                 "g15": "Rétro G15", "neon": "Néon", "dynamic": "Dynamique (pochette)",
                 "contrast": "Haut contraste", "glacier": "Glacier", "braise": "Braise",
                 "terminal": "Terminal (phosphore)", "red": "Rouge nuit",
                 "aero": "Aero (verre)", "analog": "Cadrans analogiques", "hud": "HUD cockpit",
                 "tron": "Tron (vectoriel)", "paper": "Papier (encre)",
-                "paper_dark": "Papier sombre", "pixel": "Pixel 8 bits"}
+                "paper_dark": "Papier sombre", "pixel": "Pixel 8 bits",
+                "xp": "Windows XP"}
 _theme = "dark"
 _backdrops = {}
+HEAD_TEXT, HEAD_MUTED, HEAD_ACCENT = TEXT, MUTED, ACCENT   # texte sur la barre de titre
 
 
 _dynamic = {"accent": None, "key": None}
@@ -302,7 +314,11 @@ def set_theme(name):
     if name == _theme:
         return
     _theme = name
-    globals().update(THEMES.get(name, DARK))
+    palette = THEMES.get(name, DARK)
+    globals().update(palette)
+    globals().update(HEAD_TEXT=palette.get("HEAD_TEXT", palette["TEXT"]),
+                     HEAD_MUTED=palette.get("HEAD_MUTED", palette["MUTED"]),
+                     HEAD_ACCENT=palette.get("HEAD_ACCENT", palette["ACCENT"]))
     _dynamic["accent"] = "à recalculer"     # le thème dynamique repose son accent
     looks.clear()
     STATE_COLOR.update({"working": CLAUDE, "waiting": WARN, "idle": OK, "stale": MUTED})
@@ -380,6 +396,7 @@ class Ctx:
 FONT_FACES = {"hud": ("CascadiaMono.ttf", "CascadiaMono.ttf", 0.86),    # chasse fixe
               "paper": ("times.ttf", "timesbd.ttf", 1.06),             # à empattements
               "paper_dark": ("times.ttf", "timesbd.ttf", 1.06),
+              "xp": ("tahoma.ttf", "tahomabd.ttf", 1.0),
               "analog": ("framd.ttf", "framd.ttf", 1.0)}                # industrielle
 
 
@@ -416,7 +433,7 @@ textfx.install()
 
 def _light():
     """Thème à fond clair (les fonds d'image sont éclaircis, les fondus inversés)."""
-    return _theme in ("light", "paper")
+    return _theme in ("light", "paper", "xp")
 
 
 # fond d'écran Windows derrière les pages (réglage, ou thème Aero) : voir apply_theme
@@ -823,14 +840,14 @@ def header(d, index, count, sessions, t, discord=None, alerts=None, title="", do
            streaming=None):
     title_bar(d)
     lt = time.localtime(t)
-    d.text((8, 12), time.strftime("%H:%M", lt), font=font(17, True), fill=TEXT, anchor="lm")
+    d.text((8, 12), time.strftime("%H:%M", lt), font=font(17, True), fill=HEAD_TEXT, anchor="lm")
     d.line((60, 6, 60, 18), fill=TRACK, width=1)
     # nom de la page (la date en plus sur la page Système), puis sa position « 3/11 »
     label = title or f"{JOURS[lt.tm_wday]} {lt.tm_mday}"
-    d.text((67, 12), label, font=font(12, True), fill=ACCENT, anchor="lm")
+    d.text((67, 12), label, font=font(12, True), fill=HEAD_ACCENT, anchor="lm")
     x = 67 + d.textlength(label, font=font(12, True)) + 6
     if count > 1:
-        d.text((x, 13), f"{index + 1}/{count}", font=font(9), fill=MUTED, anchor="lm")
+        d.text((x, 13), f"{index + 1}/{count}", font=font(9), fill=HEAD_MUTED, anchor="lm")
 
     # voyant Claude : un point + compteur par état, de droite à gauche (masqué si `sessions`
     # vaut None, c.-à-d. Claude fermé). Un agent fini passe au repos (gris) après done_s.
@@ -2743,8 +2760,8 @@ def render_menu(menu, c, t=None):
     d = ImageDraw.Draw(img)
     cfg = c.settings
     title_bar(d)
-    d.text((8, 12), "Paramètres", font=font(14, True), fill=TEXT, anchor="lm")
-    d.text((W - 8, 12), "▲▼ choisir · OK changer · Menu fermer", font=font(9), fill=MUTED,
+    d.text((8, 12), "Paramètres", font=font(14, True), fill=HEAD_TEXT, anchor="lm")
+    d.text((W - 8, 12), "▲▼ choisir · OK changer · Menu fermer", font=font(9), fill=HEAD_MUTED,
            anchor="rm")
     rows = menu.items[menu.top:menu.top + VISIBLE]
     for i, item in enumerate(rows):
@@ -3114,7 +3131,7 @@ def render_fans(index, c, t=None):
     s = c.gpu.s if c.gpu else {}
 
     title_bar(d)
-    d.text((8, 12), "Ventilateurs", font=font(14, True), fill=TEXT, anchor="lm")
+    d.text((8, 12), "Ventilateurs", font=font(14, True), fill=HEAD_TEXT, anchor="lm")
     temps = []
     if s.get("cpu_temp"):
         temps.append(f"CPU {s['cpu_temp']:.0f}°")
@@ -3356,8 +3373,8 @@ def render_recap(c, rec, t, shown_at):
         img.paste(backdrop(bg), (0, 0))
     d = ImageDraw.Draw(img)
     title_bar(d)
-    d.text((8, 12), "Fin de partie", font=font(14, True), fill=TEXT, anchor="lm")
-    d.text((W - 8, 12), "une touche pour fermer", font=font(9), fill=MUTED, anchor="rm")
+    d.text((8, 12), "Fin de partie", font=font(14, True), fill=HEAD_TEXT, anchor="lm")
+    d.text((W - 8, 12), "une touche pour fermer", font=font(9), fill=HEAD_MUTED, anchor="rm")
 
     cover = games.image(rec, "cover") if games else None
     if cover:
@@ -3506,8 +3523,8 @@ def render_away(c, summary, t):
     items, since, until, shown_at = summary
     title_bar(d)
     d.text((8, 12), f"Pendant ton absence · {fmt_away(until - since)}", font=font(13, True),
-           fill=TEXT, anchor="lm")
-    d.text((W - 8, 12), "une touche pour fermer", font=font(9), fill=MUTED, anchor="rm")
+           fill=HEAD_TEXT, anchor="lm")
+    d.text((W - 8, 12), "une touche pour fermer", font=font(9), fill=HEAD_MUTED, anchor="rm")
     lines = away_lines(items)
     rows = 6
     cache = c.discord.avatars if c.discord else None

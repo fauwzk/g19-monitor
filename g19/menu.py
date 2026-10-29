@@ -40,7 +40,7 @@ SETTINGS_ITEMS = [
                                   ("terminal", "terminal"), ("red", "rouge nuit"),
                                   ("aero", "aero (verre)"), ("analog", "cadrans"),
                                   ("hud", "HUD cockpit"), ("tron", "tron"), ("paper", "papier"),
-                                  ("paper_dark", "papier sombre"),
+                                  ("paper_dark", "papier sombre"), ("xp", "Windows XP"),
                                   ("pixel", "pixel 8 bits")]),
     ("wallpaper_bg", "Fond d'écran Windows derrière", "bool", None),
     ("wallpaper_dim", "    assombri à (%)", "int", (0, 90, 5)),
