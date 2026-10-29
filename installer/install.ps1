@@ -13,7 +13,9 @@ param(
     [switch]$NoLaunch,
     [switch]$NoShortcuts,
     [switch]$NoPip,
-    [switch]$NoStop
+    [switch]$NoStop,
+    [ValidateSet("ask", "yes", "no")][string]$Lgs = "ask",
+    [ValidateSet("ask", "yes", "no")][string]$Lhm = "ask"
 )
 # pas "Stop" : sous Windows PowerShell 5, la moindre ligne que git ou python écrit sur stderr
 # (une simple astuce de « git init »…) deviendrait une erreur fatale ; les codes de retour
@@ -21,6 +23,7 @@ param(
 $ErrorActionPreference = "Continue"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src = Join-Path $here "app"
+. (Join-Path $here "extras.ps1")     # LGS et LibreHardwareMonitor
 
 function Say($text, $color = "Gray") { Write-Host $text -ForegroundColor $color }
 function Step($text) { Write-Host ""; Write-Host "== $text" -ForegroundColor Cyan }
@@ -148,6 +151,48 @@ if (-not $NoPip) {
     Say "ok"
 }
 
+Step "Logitech Gaming Software"
+if (Test-Lgs) {
+    Say "déjà installé"
+} elseif (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Say "à installer depuis le site de Logitech (Logitech Gaming Software 9.04)." "Yellow"
+} elseif (Ask "L'installer (pilote de l'écran du G19 ; Windows demandera les droits administrateur) ?" $Lgs) {
+    winget install -e --id Logitech.LGS --silent --accept-package-agreements --accept-source-agreements
+    if (Test-Lgs) { Say "ok" "Green" } else { Say "Échec : à installer depuis le site de Logitech." "Yellow" }
+} else { Say "non (l'écran du G19 ne fonctionnera pas sans)" }
+
+Step "LibreHardwareMonitor (capteurs et ventilateurs)"
+$lhmExe = Find-Lhm
+if (-not $lhmExe -and (Get-Command winget -ErrorAction SilentlyContinue) -and
+    (Ask "L'installer (températures, ventilateurs ; optionnel) ?" $Lhm)) {
+    winget install -e --id LibreHardwareMonitor.LibreHardwareMonitor --silent `
+        --accept-package-agreements --accept-source-agreements
+    Refresh-Path
+    $lhmExe = Find-Lhm
+    if (-not $lhmExe) { Say "Échec de l'installation de LibreHardwareMonitor." "Yellow" }
+}
+if ($lhmExe) {
+    Say "trouvé : $lhmExe"
+    $web = $false
+    try { $web = (Invoke-WebRequest "http://localhost:8085/data.json" -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200 } catch { }
+    if ($web) {
+        Say "serveur web déjà actif : réglages laissés tels quels"
+    } elseif (Get-Process LibreHardwareMonitor -ErrorAction SilentlyContinue) {
+        Say "LHM tourne sans serveur web : dans LHM, Options → Remote Web Server → Run." "Yellow"
+    } else {
+        Set-LhmConfig (Join-Path (Split-Path $lhmExe) "LibreHardwareMonitor.config")
+        Say "réglé : serveur web (port 8085, ce PC seulement), démarrage réduit dans la zone de notification"
+    }
+    if (Get-ScheduledTask -TaskName $LhmTask -ErrorAction SilentlyContinue) {
+        Say "lancement au démarrage : déjà en place"
+    } elseif (Ask "Le lancer à chaque ouverture de session, avec les droits administrateur dont il a besoin (une demande Windows maintenant) ?" $Lhm) {
+        try {
+            if (Register-LhmTask $lhmExe) { Say "ok : tâche planifiée créée et LHM lancé" "Green" }
+            else { Say "Non fait : dans LHM, Options → Run On Windows Startup." "Yellow" }
+        } catch { Say "Refusé : dans LHM, Options → Run On Windows Startup." "Yellow" }
+    } else { Say "non" }
+} else { Say "non installé (pages GPU / ventilateurs plus limitées)" }
+
 if (-not $NoShortcuts) {
     Step "Raccourcis"
     $sh = New-Object -ComObject WScript.Shell
@@ -184,8 +229,7 @@ if (Ask "Les installer ?" $Hooks) {
 } else { Say "non (possible plus tard dans les réglages)" }
 
 Step "Terminé"
-Say "À installer à part si besoin : Logitech Gaming Software (indispensable pour l'écran du G19)," "Yellow"
-Say "LibreHardwareMonitor (capteurs et ventilateurs), MSI Afterburner + RivaTuner (GPU et FPS)." "Yellow"
+Say "En option, à installer à part : MSI Afterburner + RivaTuner (capteurs GPU, FPS en jeu)." "Yellow"
 Say "Pour reprendre tes réglages : sur l'autre PC, Réglages → Système → Exporter, puis ici Importer."
 if (-not $NoLaunch) {
     Start-Process $pyw -ArgumentList ('"' + (Join-Path $Dest "start_g19.pyw") + '"') -WorkingDirectory $Dest

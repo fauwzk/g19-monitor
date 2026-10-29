@@ -7,10 +7,12 @@ G19 Monitor — installation sur un autre PC
    - L'appli est copiée dans %LOCALAPPDATA%\Programs\G19Monitor (sans droits administrateur).
    - Raccourcis « G19 Monitor » sur le Bureau et dans le menu Démarrer (+ « Réglages G19 Monitor »).
    - Questions : lancement au démarrage de Windows, voyant Claude Code (hooks).
-3. À installer à part selon tes besoins :
-   - Logitech Gaming Software : indispensable pour l'écran du G19.
-   - LibreHardwareMonitor (Options → Remote Web Server → Run) : capteurs et ventilateurs.
-   - MSI Afterburner + RivaTuner Statistics Server : capteurs GPU et FPS en jeu.
+   - Logitech Gaming Software (pilote de l'écran du G19) et LibreHardwareMonitor (capteurs,
+     ventilateurs) : installés et réglés sur demande (winget ; Windows demande les droits
+     administrateur). LHM est réglé avec son serveur web limité à ce PC et peut être lancé à
+     chaque ouverture de session.
+3. En option, à installer à part : MSI Afterburner + RivaTuner Statistics Server (capteurs GPU,
+   FPS en jeu).
 
 Reprendre tes réglages : sur le PC d'origine, Réglages → Système → Exporter ; ici, Réglages →
 Système → Importer. Les accès Discord et la clé Steam peuvent être inclus dans l'export.

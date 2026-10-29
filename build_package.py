@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parent
 APP_FILES = ["g19_monitor.py", "config_g19.pyw", "start_g19.pyw", "claude_hook.py",
              "install_hooks.py", "install_startup.py", "setup_discord.py", "requirements.txt",
              "update.cmd", "README.md", "g19.ico"]
-INSTALLER = ["Installer.cmd", "Desinstaller.cmd", "LISEZMOI.txt", "install.ps1", "uninstall.ps1"]
+INSTALLER = ["Installer.cmd", "Desinstaller.cmd", "LISEZMOI.txt", "install.ps1", "uninstall.ps1",
+             "extras.ps1"]
 
 
 def repo_info():

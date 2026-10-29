@@ -89,7 +89,10 @@ l'icône de la zone de notification.
 2. Sur l'autre PC : décompresser, double-clic sur **`Installer.cmd`**. Il trouve Python (ou
    propose de l'installer), récupère le code depuis GitHub (et propose Git si besoin), installe
    les bibliothèques, crée les raccourcis (Bureau, menu Démarrer) et propose le démarrage avec
-   Windows et le voyant Claude Code. Pas besoin des droits administrateur.
+   Windows et le voyant Claude Code. Il propose aussi d'installer **Logitech Gaming Software**
+   et **LibreHardwareMonitor** (winget), et règle LHM : serveur web limité à ce PC, démarrage
+   réduit, lancement à l'ouverture de session avec ses droits administrateur. L'appli elle-même
+   n'a pas besoin des droits administrateur ; LGS, LHM et Git les demandent à leur installation.
 3. Réglages : *Système → Exporter* sur le premier PC, *Importer* sur le second.
 
 `Desinstaller.cmd` retire tout (les réglages peuvent être gardés).
@@ -98,10 +101,10 @@ l'icône de la zone de notification.
 
 | | |
 |---|---|
-| **Logitech Gaming Software** | indispensable : l'écran passe par son SDK LCD |
+| **Logitech Gaming Software** | indispensable : l'écran passe par son SDK LCD (proposé par l'installateur) |
 | **Python 3.10+** | et `pip install -r requirements.txt` |
 | MSI Afterburner + RivaTuner | capteurs GPU, FPS et temps d'image en jeu |
-| LibreHardwareMonitor | capteurs complémentaires et pilotage des ventilateurs (*Options → Remote Web Server → Run*) |
+| LibreHardwareMonitor | capteurs complémentaires et pilotage des ventilateurs (proposé et réglé par l'installateur ; sinon *Options → Remote Web Server → Run*) |
 | Discord, Steam, Docker, Sunshine / Parsec | pour les pages et bandeaux correspondants |
 
 ## Mises à jour automatiques
