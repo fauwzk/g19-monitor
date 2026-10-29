@@ -4,7 +4,7 @@ l'essentiel sans le PC.
 ▲ ▼ choisir · OK / ► changer · ◄ changer dans l'autre sens · Menu / Annuler fermer.
 Les changements sont enregistrés aussitôt (même fichier que config_g19.pyw).
 """
-from . import settings
+from . import settings, version
 from .night import HOURS
 
 GAME_PAGES = [("", "aucune"), ("gpu", "GPU"), ("games", "Jeux")]
@@ -105,7 +105,6 @@ SETTINGS_ITEMS = [
     ("config", "Ouvrir la config sur le PC", "action", "config"),
     ("restart", "Redémarrer l'appli", "action", "restart"),
     ("auto_update", "Mises à jour auto (GitHub)", "bool", None),
-    ("update_check", "Vérifier les mises à jour", "action", ("update",)),
 ]
 VISIBLE = 8
 
@@ -117,6 +116,7 @@ class SettingsMenu:
         self.selectable = []
         self.index = self.top = 0
         self.real_fps = None
+        self.update_status = ""  # dernière vérification des mises à jour (affichée en tête)
 
     def show(self, cfg, page_action=None):
         """Ouvre le menu ; `page_action` = (libellé, cible, args) lié à la page affichée."""
@@ -128,9 +128,15 @@ class SettingsMenu:
             same = page_action and sc.get("target") == page_action[1]
             if sc.get("name") and sc.get("target") and not same:
                 launch.append((None, sc["name"], "launch", (sc["target"], sc.get("args", ""))))
-        self.items = THEME_ITEMS + ([(None, "Ouvrir", "title", None)] + launch if launch else []) +             SETTINGS_ITEMS
+        head = [(None, f"G19 Monitor · {version.label(short=True)}", "title", None),
+                ("update_check", "Vérifier les mises à jour", "action", ("update",))]
+        self.items = (head + THEME_ITEMS
+                      + ([(None, "Ouvrir", "title", None)] + launch if launch else [])
+                      + SETTINGS_ITEMS)
         self.selectable = [i for i, it in enumerate(self.items) if it[2] != "title"]
-        self.index, self.top = self.selectable[0], 0
+        # curseur sur le thème à l'ouverture (la vérification est juste au-dessus)
+        self.index = next(i for i, it in enumerate(self.items) if it[0] == "theme")
+        self.top = 0
         self.open = True
 
     def value_text(self, item, cfg):
@@ -144,6 +150,9 @@ class SettingsMenu:
         if kind == "choice":
             value = cfg.get(key)
             return dict(opts).get(value, value or "?")  # couleur perso : affichée en hex
+        if key == "update_check" and self.update_status:
+            # « à jour (10:31) », « mise à jour disponible (2 changements)… » : court
+            return self.update_status if len(self.update_status) <= 24                 else self.update_status.split(" (")[0][:24]
         return "›" if kind in ("action", "launch") else ""
 
     def handle(self, button, cfg):

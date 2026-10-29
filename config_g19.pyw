@@ -22,7 +22,7 @@ from PIL import Image, ImageTk  # noqa: E402
 
 import install_hooks  # noqa: E402
 import install_startup  # noqa: E402
-from g19 import afterburner, backup, config, instance, night, remote, rtss, screen, settings, steam_live, theme  # noqa: E402
+from g19 import afterburner, backup, config, instance, night, remote, rtss, screen, settings, steam_live, theme, version  # noqa: E402
 from g19 import discord as discord_rpc  # noqa: E402
 from g19.alerts import DEFAULT_THRESHOLDS, RULES  # noqa: E402
 from g19.launcher import launch  # noqa: E402
@@ -156,9 +156,18 @@ class ConfigApp(tk.Tk):
         self._tabs = []
 
         # bandeau façon G19 : titre à gauche, état de l'appli à droite
-        self.header = theme.HeaderBar(self, "G19 Monitor", "configuration")
+        self.header = theme.HeaderBar(self, "G19 Monitor", f"configuration · {version.label()}")
         self.header.pack(fill="x")
         theme.paint(self.header, bg="BG")
+
+        # version et mises à jour, visibles sur toutes les pages
+        bar = ttk.Frame(self, padding=(14, 6, 12, 0), style="Root.TFrame")
+        bar.pack(fill="x")
+        ttk.Label(bar, text=f"Version {version.label()}", style="Muted.TLabel").pack(side="left")
+        self.update_label = ttk.Label(bar, text="", style="Muted.TLabel")
+        self.update_label.pack(side="left", padx=(12, 0))
+        ttk.Button(bar, text="Vérifier les mises à jour", command=self._check_update).pack(
+            side="right")
 
         body = ttk.Frame(self, padding=(0, 12, 12, 12), style="Root.TFrame")
         body.pack(fill="both", expand=True)
@@ -1307,8 +1316,20 @@ class ConfigApp(tk.Tk):
         self.ctx = make_ctx()
         self.media = MediaMonitor()
 
+    def _show_update_status(self):
+        """Résultat de la dernière vérification faite par l'appli (fichier d'état)."""
+        st = settings.load_state().get("update_status") or {}
+        text = st.get("text", "")
+        if text:
+            text = "Mises à jour : " + text
+        if self.update_label.cget("text") != text:
+            self.update_label.config(text=text)
+
     def _tick(self):
         try:
+            if time.time() - getattr(self, "_update_at", 0) >= 2:
+                self._update_at = time.time()
+                self._show_update_status()
             self._update_preview()
             self._update_states()
             self._sync_from_file()

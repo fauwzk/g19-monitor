@@ -44,7 +44,7 @@ def _startup_failed():
 
 
 try:
-    from g19 import config, instance, mixer, night, remote, screen, settings
+    from g19 import config, instance, mixer, night, remote, screen, settings, version
     from g19.alerts import AlertMonitor
     from g19.updater import Updater
     from g19.amd_driver import AmdDriver
@@ -167,6 +167,7 @@ class Splash:
         self.start = time.time()
         self.min = 0 if short else self.MIN
         self.progress, self.label = 0.05, "démarrage…"
+        self.version = version.label()
         self._done = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -176,7 +177,7 @@ class Splash:
 
     def _frame(self, shown, now, fade=1.0):
         img = render_splash(shown, self.label, now, self.theme,
-                            None if self.min == 0 else now - self.start, fade)
+                            None if self.min == 0 else now - self.start, fade, self.version)
         self.lcd.show(screen.adjust(img, self.cfg))
         self.lcd.update()
 
@@ -565,6 +566,7 @@ def run():
                         page = res[1]
                     elif res and res[0] == "settings":
                         c.media = media.state
+                        menu.update_status = c.updater.status if c.updater else ""
                         menu.show(cfg, page_action(page, c))
                     continue
                 if fan_panel is not None:

@@ -117,8 +117,10 @@ a du nouveau sur GitHub :
 - **modifications locales** (on édite sur ce PC) → rien n'est écrasé, un bandeau prévient.
 
 Il suffit donc de modifier le code sur un PC et de le pousser sur GitHub : l'autre suit.
-Réglages : « Mises à jour auto » et « Vérifier les mises à jour » dans le menu du G19, ou la
-carte *Mises à jour* de l'onglet Système de l'utilitaire.
+La version (commit et date, « modifié » s'il y a des modifications locales) s'affiche sur
+l'écran de démarrage, en tête du menu du G19 avec « Vérifier les mises à jour » et le résultat de
+la dernière vérification, et en haut de l'utilitaire avec le même bouton. « Mises à jour auto »
+dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilitaire.
 
 ## Utilisation
 

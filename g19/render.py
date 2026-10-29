@@ -3276,7 +3276,7 @@ def _keycap(w, h, accent):
     return out
 
 
-def render_splash(progress, step, t, theme="dark", age=None, fade=1.0):
+def render_splash(progress, step, t, theme="dark", age=None, fade=1.0, version=""):
     """Écran de démarrage : une touche « G19 » vernie tombe en place et s'enfonce, sous un halo
     de l'accent ; dessous, le nom, une pastille par module (allumées avec le chargement) et une
     fine barre parcourue d'un reflet. `age` : secondes depuis l'apparition (None = sans
@@ -3349,6 +3349,8 @@ def render_splash(progress, step, t, theme="dark", age=None, fade=1.0):
                 d.line((x, by, x, by + 4), fill=mix(ACCENT, (255, 255, 255), 0.6 * f))
     d.text((W - 8, H - 4), time.strftime("%H:%M", time.localtime(t)), font=font(8),
            fill=dim(MUTED, 0.7), anchor="rb")
+    if version:                             # commit en cours, en bas à gauche
+        d.text((8, H - 4), f"version {version}", font=font(8), fill=dim(MUTED, 0.7), anchor="lb")
 
     if age is not None and age < 0.35:      # fondu d'entrée
         img = Image.blend(Image.new("RGB", (W, H), (0, 0, 0)), img, max(0.0, age / 0.35))
