@@ -1,7 +1,6 @@
 """Steam en direct : téléchargements / mises à jour en cours (manifestes locaux) et amis en
 ligne (API Web Steam, avec la clé personnelle de l'utilisateur, optionnelle)."""
 import json
-import os
 import re
 import threading
 import time
@@ -10,6 +9,8 @@ import urllib.parse
 import urllib.request
 import winreg
 from pathlib import Path
+
+import psutil
 
 from . import config
 from .steam import ci, parse_vdf, steam_root
@@ -26,28 +27,12 @@ UPDATE_RUNNING, UPDATE_PAUSED, UPDATE_STARTED = 256, 512, 1024
 VALIDATING, PREALLOCATING, DOWNLOADING, STAGING, COMMITTING = \
     131072, 524288, 1048576, 2097152, 4194304
 
-# « AppID 49520 update started : download 0/14452877760, store 0/0, …, stage 0/16343933426 »
-STARTED = re.compile(r"AppID (\d+) update started : download (\d+)/(\d+),.*?stage (\d+)/(\d+)")
+# lignes de content_log.txt suivies, dans l'ordre : début d'une mise à jour, avec ses tailles
+# (« AppID 49520 update started : download 0/14452877760, …, stage 0/16343933426 ») et
+# changements d'état (« … state changed : …, (Suspended) » quand on met en pause)
+EVENTS = re.compile(r"AppID (\d+) (?:update started : download (\d+)/(\d+),.*?stage (\d+)/(\d+)"
+                    r"|state changed : ([^\r\n]*))")
 LOG_TAIL = 512 * 1024
-
-
-def folder_bytes(path):
-    """Taille des fichiers d'un dossier (récursif) ; 0 s'il n'existe pas."""
-    total, stack = 0, [path]
-    while stack:
-        try:
-            with os.scandir(stack.pop()) as it:
-                for e in it:
-                    try:
-                        if e.is_dir(follow_symlinks=False):
-                            stack.append(e.path)
-                        else:
-                            total += e.stat(follow_symlinks=False).st_size
-                    except OSError:
-                        continue
-        except OSError:
-            continue
-    return total
 
 
 PERSONA = {1: "en ligne", 2: "occupé", 3: "absent", 4: "absent", 5: "en ligne", 6: "en ligne"}
@@ -96,8 +81,10 @@ class SteamLive:
         self.running = False     # le client Steam tourne
         self._manifests = {}     # chemin → (mtime, AppState)
         self._progress = {}      # appid → (t, octets) pour la vitesse
-        self._log = {"mtime": None, "starts": {}}   # appid → (dl déjà, dl total, stage déjà, stage total)
+        self._log = {"mtime": None, "starts": {}, "paused": {}}
         self._best = {}          # appid → octets téléchargés (jamais en arrière)
+        self._live = {}          # appid → {"known": octets sûrs, "extra": écrits depuis}
+        self._written = None     # octets écrits sur le disque par steam.exe, au passage d'avant
         self._friend_ids = []
         self._friend_ids_at = 0.0
         self._key = None
@@ -129,14 +116,14 @@ class SteamLive:
         return {self.root} | {Path(v["path"]) for v in libs.values()
                               if isinstance(v, dict) and v.get("path")}
 
-    def _log_starts(self):
-        """Derniers « update started » de content_log.txt : tailles à télécharger et à installer,
-        que le manifeste n'a pas toujours (et dont il ne met la progression à jour que par à-coups)."""
+    def _log_events(self):
+        """content_log.txt : tailles de chaque mise à jour (le manifeste ne les a pas toujours)
+        et pause en cours (que les StateFlags du manifeste ne montrent pas)."""
         path = self.root / "logs" / "content_log.txt"
         try:
             st = path.stat()
         except OSError:
-            return {}
+            return {}, {}
         if st.st_mtime != self._log["mtime"]:
             self._log["mtime"] = st.st_mtime
             try:
@@ -144,35 +131,54 @@ class SteamLive:
                     f.seek(max(0, st.st_size - LOG_TAIL))
                     text = f.read().decode("utf-8", errors="replace")
             except OSError:
-                return self._log["starts"]
-            starts = {}
-            for m in STARTED.finditer(text):
-                starts[m.group(1)] = tuple(int(v) for v in m.groups()[1:])
-            self._log["starts"] = starts
-        return self._log["starts"]
+                return self._log["starts"], self._log["paused"]
+            starts, paused = {}, {}
+            for m in EVENTS.finditer(text):
+                appid = m.group(1)
+                if m.group(2) is not None:
+                    starts[appid] = tuple(int(v) for v in m.groups()[1:5])
+                    paused[appid] = False
+                else:
+                    paused[appid] = "Suspended" in m.group(6)
+            self._log["starts"], self._log["paused"] = starts, paused
+        return self._log["starts"], self._log["paused"]
 
-    def _live_done(self, lib, appid, state, done, total, starts):
-        """Octets téléchargés en direct : le dossier steamapps/downloading/<appid> grossit au fil
-        de l'eau ; rapporté au volume à installer (stage), il donne la part du téléchargement."""
-        start = starts.get(str(appid))
-        if not start:
-            return done, total
-        dl0, dl_total, st0, st_total = start
+    def _steam_written(self):
+        """Octets écrits sur le disque par steam.exe depuis son lancement (compteur Windows)."""
+        pid = _reg_dword(r"Software\Valve\Steam\ActiveProcess", "pid")
+        try:
+            return psutil.Process(pid).io_counters().write_bytes if pid else None
+        except (psutil.Error, OSError):
+            return None
+
+    def _live_done(self, appid, active, done, total, start, written):
+        """Octets téléchargés en direct. Le manifeste n'est mis à jour que par à-coups (pause,
+        fin…) et le dossier downloading/ est réservé d'un coup à sa taille finale : on part de
+        la dernière valeur sûre (manifeste ou journal) et on ajoute ce que Steam écrit depuis sur
+        le disque, ramené au volume téléchargé (le journal donne le rapport téléchargé/installé)."""
+        dl0, dl_total, _st0, st_total = start or (0, 0, 0, 0)
         total = total or dl_total
-        done = max(done, dl0)
-        if state not in ("préparation",) and st_total and dl_total:
-            # préallocation : Steam réserve parfois tout l'espace d'un coup, on l'ignore
-            staged = folder_bytes(lib / "steamapps" / "downloading" / str(appid))
-            frac = min(1.0, staged / st_total)
-            if frac < 0.995 or done:
-                done = max(done, int(frac * dl_total))
-        return min(done, total) if total else done, total
+        known = max(done, dl0)
+        rec = self._live.get(appid)
+        if not rec or known > rec["known"]:
+            rec = self._live[appid] = {"known": known, "extra": 0}   # nouvelle valeur sûre
+        if active and written:
+            rec["extra"] += written * (dl_total / st_total if dl_total and st_total else 1)
+        done = known + int(rec["extra"])
+        if total:
+            done = min(done, int(total * 0.999))   # 100 % : c'est Steam qui le dira
+        return done, total
 
     def _scan(self):
         if not self.root:
             return
-        starts = self._log_starts()
+        starts, paused = self._log_events()
         self.running = _reg_dword(r"Software\Valve\Steam\ActiveProcess", "pid") not in (None, 0)
+        w = self._steam_written()
+        written = w - self._written if w is not None and self._written is not None and \
+            w >= self._written else 0
+        self._written = w
+        credited = False         # Steam télécharge un jeu à la fois : l'écriture va au premier
         now = time.time()
         out = []
         seen = set()
@@ -196,8 +202,14 @@ class SteamLive:
                 if not state:
                     self._progress.pop(appid, None)
                     self._best.pop(appid, None)
+                    self._live.pop(appid, None)
                     continue
-                done, total = self._live_done(lib, appid, state, done, total, starts)
+                if state == "téléchargement" and paused.get(str(appid)):
+                    state = "en pause"
+                active = state == "téléchargement" and not credited
+                credited = credited or active
+                done, total = self._live_done(appid, active, done, total, starts.get(str(appid)),
+                                              written if active else 0)
                 done = self._best[appid] = max(done, self._best.get(appid, 0))
                 rate = None
                 prev = self._progress.get(appid)

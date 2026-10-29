@@ -14,6 +14,22 @@ BASE_COLORS = [("#ffffff", "blanc"), ("#00c8ff", "cyan"), ("#4060ff", "bleu"),
 
 # (clé, libellé, type, options) ; type : bool, int (min, max, pas), choice [(valeur, texte)],
 # action (commande), launch ((cible, arguments)), title (séparateur)
+
+# en tête du menu, avant « Ouvrir » : le curseur est sur le thème à l'ouverture
+THEME_ITEMS = [
+    (None, "Thème", "title", None),
+    ("theme", "Thème", "choice", [("dark", "sombre"), ("light", "clair"), ("g19", "G19 (origine)"),
+                                  ("g15", "rétro G15"), ("neon", "néon"),
+                                  ("dynamic", "dynamique"), ("contrast", "haut contraste"), ("glacier", "glacier"), ("braise", "braise"),
+                                  ("terminal", "terminal"), ("red", "rouge nuit"),
+                                  ("aero", "aero (verre)"), ("analog", "cadrans"),
+                                  ("hud", "HUD cockpit"), ("tron", "tron"), ("paper", "papier"),
+                                  ("paper_dark", "papier sombre"), ("xp", "Windows XP"),
+                                  ("pixel", "pixel 8 bits")]),
+    ("wallpaper_bg", "Fond d'écran Windows derrière", "bool", None),
+    ("wallpaper_dim", "    assombri à (%)", "int", (0, 90, 5)),
+]
+
 SETTINGS_ITEMS = [
     (None, "Rétroéclairage", "title", None),
     ("backlight", "Voyant clavier", "bool", None),
@@ -34,16 +50,6 @@ SETTINGS_ITEMS = [
     ("test_discord", "Tester · bleu (Discord)", "action", ("test", "discord")),
     ("test_notif", "Tester · blanc (notif Windows)", "action", ("test", "notif")),
     (None, "Écran", "title", None),
-    ("theme", "Thème", "choice", [("dark", "sombre"), ("light", "clair"), ("g19", "G19 (origine)"),
-                                  ("g15", "rétro G15"), ("neon", "néon"),
-                                  ("dynamic", "dynamique"), ("contrast", "haut contraste"), ("glacier", "glacier"), ("braise", "braise"),
-                                  ("terminal", "terminal"), ("red", "rouge nuit"),
-                                  ("aero", "aero (verre)"), ("analog", "cadrans"),
-                                  ("hud", "HUD cockpit"), ("tron", "tron"), ("paper", "papier"),
-                                  ("paper_dark", "papier sombre"), ("xp", "Windows XP"),
-                                  ("pixel", "pixel 8 bits")]),
-    ("wallpaper_bg", "Fond d'écran Windows derrière", "bool", None),
-    ("wallpaper_dim", "    assombri à (%)", "int", (0, 90, 5)),
     ("discord_toasts", "Bandeau Discord", "bool", None),
     ("win_toasts", "Bandeau notifs Windows", "bool", None),
     ("media_toasts", "Bandeau changement de média", "bool", None),
@@ -107,7 +113,7 @@ VISIBLE = 8
 class SettingsMenu:
     def __init__(self):
         self.open = False
-        self.items = SETTINGS_ITEMS
+        self.items = THEME_ITEMS + SETTINGS_ITEMS
         self.selectable = []
         self.index = self.top = 0
         self.real_fps = None
@@ -122,7 +128,7 @@ class SettingsMenu:
             same = page_action and sc.get("target") == page_action[1]
             if sc.get("name") and sc.get("target") and not same:
                 launch.append((None, sc["name"], "launch", (sc["target"], sc.get("args", ""))))
-        self.items = ([(None, "Ouvrir", "title", None)] + launch if launch else []) + SETTINGS_ITEMS
+        self.items = THEME_ITEMS + ([(None, "Ouvrir", "title", None)] + launch if launch else []) +             SETTINGS_ITEMS
         self.selectable = [i for i, it in enumerate(self.items) if it[2] != "title"]
         self.index, self.top = self.selectable[0], 0
         self.open = True
