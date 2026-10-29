@@ -144,7 +144,7 @@ dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilit
 |---|---|---|
 | **Système** | CPU (+ historique), GPU, VRAM, RAM, réseau, disques, encart Claude | OK : ventilateurs |
 | **GPU** | FPS, temps d'image ; en jeu, graphe des FPS (échelle resserrée : les chutes se voient) et des temps d'image (une barre par image : orange au-delà de 1,5× la médiane, rouge pour une saccade), FPS moyen, 1 % low, saccades ; jauges charge / température / puissance, fréquences, hotspot, VRAM, ventilo, CPU, tension | OK (en jeu) : les deux graphes → FPS → temps d'image |
-| **Jeux** | En jeu : pochette, launcher, durée, temps du jour et total, FPS, températures max, courbe des FPS. Sinon : derniers jeux | |
+| **Jeux** | En jeu : pochette, launcher, durée, temps du jour et total, FPS, températures max, courbe des FPS. Sinon : derniers jeux. Au lancement d'un jeu, le G19 passe sur la page choisie (GPU par défaut) ; à sa fermeture, le récapitulatif s'affiche aussitôt, puis le G19 revient à la page d'avant la partie (sauf si on a changé de page pendant) | |
 | **Steam** | Téléchargements et mises à jour en cours (progression et vitesse en direct d'après `steamapps\downloading`, tailles d'après les manifestes et `logs\content_log.txt`) ; amis en ligne et leur jeu (clé d'API Web Steam dans l'utilitaire) | ▲ ▼ défiler · OK liste d'amis |
 | **Média** | Pochette, titre, artiste, progression, volume + vumètre, accent tiré de la pochette ; paroles synchronisées (LRCLIB) | ▲ préc. · OK paroles · ▼ suiv. |
 | **Audio** | Sortie et entrée par défaut de Windows, volume général et micro avec vumètres, volume de chaque appli, appliqués au système | ▲ ▼ volume · OK régler · ◄ ► valeur |

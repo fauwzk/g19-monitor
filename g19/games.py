@@ -7,6 +7,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+import psutil
+
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
 from . import config
@@ -18,6 +20,7 @@ HISTORY_FILE = "games.json"
 HISTORY_MAX = 300
 MIN_SESSION = 60      # s : en dessous, la session n'est pas gardée
 GRACE = 90            # s sans images avant de considérer le jeu fermé (alt-tab, chargement…)
+GONE = 3              # s sans images quand son processus n'existe plus : fermé pour de bon
 COVER = (84, 126)
 THUMB = (30, 45)
 CDN = "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{}/{}.jpg"
@@ -69,9 +72,20 @@ def _curve(values, n):
                   / max(1, len(vals[int(i * step):int((i + 1) * step)]))) for i in range(n)]
 
 
+def _alive(pid):
+    """Le processus du jeu tourne-t-il encore ? (pid inconnu : on suppose que oui)"""
+    if not pid:
+        return True
+    try:
+        return psutil.pid_exists(pid)
+    except Exception:
+        return True
+
+
 class Session:
     def __init__(self, game, ident, now):
         self.exe = game["path"]
+        self.pid = game.get("pid")
         self.appid = ident.get("steam_appid")
         self.launcher = ident.get("launcher")
         self.name = ident.get("name") or pretty_exe(game["name"])
@@ -142,7 +156,10 @@ class GameTracker:
                 self.history.pop(0)
                 self.session.start = last["start"]
                 self.session.temp_max = last.get("temp_max") or 0.0
-        elif s and now - s.last_seen > GRACE:
+        elif s and (now - s.last_seen > GRACE or
+                    (now - s.last_seen > GONE and not _alive(s.pid))):
+            # processus du jeu disparu : fin tout de suite (récapitulatif sans attendre) ;
+            # sinon alt-tab ou chargement, on attend GRACE
             self._end()
 
     def _end(self):

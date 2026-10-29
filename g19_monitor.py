@@ -301,6 +301,17 @@ def launched_by_agent():
     return any(os.environ.get(k) for k in AGENT_ENV)
 
 
+BACK_AFTER_GAME = 5      # s après la fin de la partie (sans récapitulatif) avant de revenir
+
+
+def page_after_game(page, before, cfg, pages):
+    """Page à afficher une fois la partie finie : celle d'avant le jeu, si on est encore sur
+    la page en jeu ouverte automatiquement (si on a navigué pendant la partie, on y reste)."""
+    if before and page == cfg["game_page"] and before in pages:
+        return before
+    return page
+
+
 def check_lgs_lighting(c, now, checked_for):
     """LGS lancé avec « Permettre le contrôle de l'éclairage par le jeu » décochée : le clavier
     ne clignote plus, sans aucune erreur. Bandeau une fois par lancement de LGS (son fichier de
@@ -433,6 +444,8 @@ def run():
     menu = SettingsMenu()
     cover = Coverflow()
     recap = None            # (partie terminée, affiché depuis) : récapitulatif de fin de partie
+    before_game = None      # page affichée avant l'ouverture automatique de la page en jeu
+    left_game_at = None     # fin du jeu (plus de FPS), pour revenir même sans récapitulatif
     pattern_at = None       # mire de réglage de l'écran affichée depuis
     color_test = None       # (effet, "#rrggbb", fin) : couleur essayée depuis l'utilitaire
     last_frame, render_error_at = None, 0.0
@@ -558,7 +571,13 @@ def run():
             if page == "gpu" and game:
                 c.gpu.sample_frametime()    # graphe des temps d'image : une lecture par image
             if game and not in_game and cfg["game_page"] in pages:
+                if page != cfg["game_page"]:
+                    before_game = page          # on y reviendra après la partie
                 page = cfg["game_page"]
+            if in_game and not game:
+                left_game_at = now
+            elif game:
+                left_game_at = None
             in_game = bool(game)
 
             if c.games.ended is not last_ended:
@@ -567,6 +586,12 @@ def run():
                     recap = (last_ended[0], now)
             if recap and now - recap[1] > RECAP_SECONDS:
                 recap = None
+                page, before_game = page_after_game(page, before_game, cfg, pages), None
+            elif before_game and not recap and left_game_at and c.games.session is None and \
+                    now - left_game_at > BACK_AFTER_GAME:
+                # partie finie sans récapitulatif (option coupée, partie trop courte) ; pas
+                # pendant un alt-tab : la session de jeu existe alors encore
+                page, before_game = page_after_game(page, before_game, cfg, pages), None
             for b in [*lcd.pressed(), *keys.pressed()]:
                 c.away.poke(now)
                 if pattern_at:
@@ -574,6 +599,7 @@ def run():
                     continue
                 if recap and not cover.open and not menu.open:
                     recap = None            # n'importe quelle touche ferme le récapitulatif
+                    page, before_game = page_after_game(page, before_game, cfg, pages), None
                     continue
                 if c.away.summary and not cover.open and not menu.open:
                     c.away.close_summary()  # idem pour le résumé d'absence
