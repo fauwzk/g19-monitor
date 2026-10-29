@@ -1,0 +1,13 @@
+psutil>=5.9
+Pillow>=10.1
+winrt-runtime
+winrt-Windows.Media.Control
+winrt-Windows.Foundation
+winrt-Windows.Storage.Streams
+winrt-Windows.UI.Notifications
+winrt-Windows.UI.Notifications.Management
+winrt-Windows.ApplicationModel
+pycaw
+pystray
+comtypes
+fonttools

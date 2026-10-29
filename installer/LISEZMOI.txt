@@ -1,0 +1,19 @@
+G19 Monitor — installation sur un autre PC
+===========================================
+
+1. Décompresse ce dossier n'importe où (le Bureau convient).
+2. Double-clic sur Installer.cmd.
+   - Python 3.10 ou plus récent est trouvé, ou proposé à l'installation (winget).
+   - L'appli est copiée dans %LOCALAPPDATA%\Programs\G19Monitor (sans droits administrateur).
+   - Raccourcis « G19 Monitor » sur le Bureau et dans le menu Démarrer (+ « Réglages G19 Monitor »).
+   - Questions : lancement au démarrage de Windows, voyant Claude Code (hooks).
+3. À installer à part selon tes besoins :
+   - Logitech Gaming Software : indispensable pour l'écran du G19.
+   - LibreHardwareMonitor (Options → Remote Web Server → Run) : capteurs et ventilateurs.
+   - MSI Afterburner + RivaTuner Statistics Server : capteurs GPU et FPS en jeu.
+
+Reprendre tes réglages : sur le PC d'origine, Réglages → Système → Exporter ; ici, Réglages →
+Système → Importer. Les accès Discord et la clé Steam peuvent être inclus dans l'export.
+
+Mettre à jour : relance Installer.cmd avec un paquet plus récent (les réglages restent).
+Désinstaller : Desinstaller.cmd.

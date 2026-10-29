@@ -1,0 +1,12 @@
+# généré à l'exécution
+__pycache__/
+*.pyc
+g19.log
+g19.log.*
+
+# captures d'écran (contiennent des données personnelles : comptes, pochettes, amis…)
+captures/
+captures_*.png
+
+# paquet construit par build_package.py
+dist/

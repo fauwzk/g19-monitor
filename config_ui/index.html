@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>G19 Monitor</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --card: #181e26; --field: #1f2630; --line: #28303a;
+    --hover: #222a34; --text: #e6edf3; --muted: #8b949e; --faint: #5b6570;
+    --accent: #39c5cf; --ok: #3fb950; --warn: #e3b341; --hot: #f85149;
+    --claude: #d97757; --discord: #5865f2;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text); overflow: hidden;
+    font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    display: grid; grid-template-columns: 216px minmax(500px, 1fr) 450px;
+    -webkit-user-select: none; user-select: none;
+  }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 3px solid var(--bg); }
+
+  /* --- barre latérale --- */
+  nav { background: var(--panel); border-right: 1px solid var(--line); display: flex;
+        flex-direction: column; padding: 18px 12px; gap: 2px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 18px; }
+  .brand svg { flex: none; }
+  .brand b { font-size: 15px; letter-spacing: .2px; display: block; }
+  .brand small { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px #3fb95026; }
+  nav button { all: unset; display: flex; align-items: center; gap: 11px; padding: 8px 10px;
+               border-radius: 8px; color: var(--muted); cursor: pointer; font-weight: 500; }
+  nav button svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8;
+                   stroke-linecap: round; stroke-linejoin: round; opacity: .9; }
+  nav button:hover { background: var(--hover); color: var(--text); }
+  nav button.active { background: #39c5cf1a; color: var(--accent); }
+  nav .spacer { flex: 1; }
+  nav .foot { color: var(--faint); font-size: 12px; padding: 8px 10px 0; }
+
+  /* --- contenu --- */
+  main { overflow-y: auto; padding: 30px 36px 60px; }
+  main h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  main .lead { color: var(--muted); margin: 0 0 22px; }
+  section { display: none; }
+  section.active { display: block; animation: fade .18s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+          margin-bottom: 16px; overflow: hidden; }
+  .card > h2 { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+               color: var(--accent); margin: 0; padding: 14px 18px 4px; }
+  .row { display: flex; align-items: center; gap: 16px; padding: 12px 18px; min-height: 54px; }
+  .row + .row { border-top: 1px solid #ffffff0a; }
+  .row .label { flex: 1; min-width: 140px; }
+  .row .label b { font-weight: 500; display: block; }
+  .row .label span { color: var(--muted); font-size: 12.5px; display: block; }
+  .row .label span.colordot { display: inline-block; vertical-align: 1px; }
+  .row.sub { padding-left: 40px; }
+  .row.disabled { opacity: .4; pointer-events: none; }
+  .hint { color: var(--muted); font-size: 12.5px; padding: 0 18px 14px; margin: 0; }
+
+  /* --- contrôles --- */
+  .switch { position: relative; width: 40px; height: 22px; flex: none; cursor: pointer; }
+  .switch input { display: none; }
+  .switch i { position: absolute; inset: 0; background: var(--line); border-radius: 22px; transition: .18s; }
+  .switch i::after { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+                     border-radius: 50%; background: var(--text); transition: .18s; }
+  .switch input:checked + i { background: var(--accent); }
+  .switch input:checked + i::after { transform: translateX(18px); background: #0d1117; }
+
+  .seg { display: inline-flex; background: var(--field); border-radius: 9px; padding: 3px; gap: 2px; flex: none; }
+  .seg button { all: unset; padding: 5px 12px; border-radius: 7px; color: var(--muted); cursor: pointer;
+                font-size: 13px; font-weight: 500; }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: var(--line); color: var(--text); }
+
+  .stepper { display: inline-flex; align-items: center; background: var(--field); border-radius: 9px; flex: none; }
+  .stepper button { all: unset; width: 30px; height: 30px; text-align: center; cursor: pointer;
+                    color: var(--muted); font-size: 16px; border-radius: 9px; }
+  .stepper button:hover { color: var(--text); background: var(--hover); }
+  .stepper output { min-width: 44px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  input[type=text], input[type=password] {
+    background: var(--field); border: 1px solid transparent; color: var(--text); border-radius: 9px;
+    padding: 8px 11px; font: inherit; outline: none; width: 260px; -webkit-user-select: text; user-select: text;
+  }
+  input[type=text]:focus, input[type=password]:focus { border-color: var(--accent); }
+  input[type=range] { -webkit-appearance: none; width: 180px; height: 4px; border-radius: 4px; background: var(--line); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px;
+                                            border-radius: 50%; background: var(--accent); cursor: pointer; }
+  .btn { all: unset; padding: 7px 14px; border-radius: 9px; background: var(--line); cursor: pointer;
+         font-weight: 500; font-size: 13px; white-space: nowrap; }
+  .btn:hover { background: #323c48; }
+  .btn.primary { background: var(--accent); color: #0d1117; font-weight: 600; }
+  .btn.primary:hover { background: #6fd9e0; }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  .btn.ghost:hover { color: var(--text); background: var(--hover); }
+  .btn.danger:hover { color: var(--hot); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .value { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+  .msg { font-size: 12.5px; color: var(--muted); }
+  .msg.ok { color: var(--ok); } .msg.err { color: var(--hot); }
+
+  /* liste des pages (glisser-déposer) */
+  .pages .row { cursor: grab; }
+  .pages .row.dragging { opacity: .35; }
+  .grip { color: var(--faint); font-size: 16px; letter-spacing: -2px; cursor: grab; }
+  .pages .row.off .label b { color: var(--muted); }
+
+  /* couleurs */
+  .swatches { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid transparent;
+            box-shadow: inset 0 0 0 1px #ffffff22; }
+  .swatch.on { border-color: var(--text); }
+  .swatch.custom { position: relative; overflow: hidden;
+                   background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+  .swatch.custom input { position: absolute; inset: -8px; opacity: 0; cursor: pointer; }
+  .colordot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+
+  /* raccourcis */
+  .sc-list .row .label span { font-family: Consolas, monospace; font-size: 12px; }
+  .sc-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 18px; border-top: 1px solid #ffffff0a; }
+  .sc-form input { width: 100%; }
+  .sc-form .actions { grid-column: 1 / -1; }
+
+  /* sources */
+  .sources { padding: 4px 18px 10px; }
+  .sources div { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+  .sources div + div { border-top: 1px solid #ffffff0a; }
+  .sources div span:last-child { color: var(--muted); font-size: 12.5px; margin-left: auto; white-space: nowrap;
+                                 overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+
+  ol.steps { margin: 4px 0 6px; padding: 0 18px 0 40px; color: var(--muted); }
+  ol.steps li { padding: 3px 0; }
+  ol.steps code { color: var(--text); background: var(--field); padding: 1px 6px; border-radius: 5px; }
+
+  /* --- aperçu --- */
+  aside { border-left: 1px solid var(--line); background: radial-gradient(120% 80% at 50% 30%, #141a22 0%, var(--bg) 70%);
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px; }
+  .device { background: linear-gradient(160deg, #2a2f36, #15181d); padding: 16px 16px 22px; border-radius: 18px;
+            box-shadow: 0 24px 60px #00000080, inset 0 1px 0 #ffffff14; }
+  .device .screen { width: 384px; height: 288px; background: #000; border-radius: 4px; overflow: hidden;
+                    box-shadow: 0 0 0 2px #000, 0 0 30px #39c5cf14; }
+  .device img { width: 100%; height: 100%; display: block; }
+  .device .keys { display: flex; justify-content: center; gap: 10px; margin-top: 14px; }
+  .device .keys i { width: 22px; height: 8px; border-radius: 4px; background: #3a414a; }
+  .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 410px; }
+  .chips button { all: unset; padding: 5px 12px; border-radius: 20px; color: var(--muted); cursor: pointer;
+                  font-size: 12.5px; background: var(--card); border: 1px solid var(--line); }
+  .chips button:hover { color: var(--text); }
+  .chips button.on { color: #0d1117; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 20px); opacity: 0;
+           background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px;
+           font-size: 13px; transition: .2s; pointer-events: none; display: flex; gap: 8px; align-items: center; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand">
+    <svg width="34" height="34" viewBox="0 0 34 34"><rect x="2" y="6" width="30" height="22" rx="6" fill="#181e26" stroke="#28303a" stroke-width="2"/>
+      <rect x="7" y="11" width="16" height="3" rx="1.5" fill="#39c5cf"/><rect x="7" y="16" width="11" height="3" rx="1.5" fill="#a371f7"/>
+      <rect x="7" y="21" width="19" height="3" rx="1.5" fill="#58a6ff"/></svg>
+    <div><b>G19 Monitor</b><small><span class="dot" id="runDot"></span><span id="runText">…</span></small></div>
+  </div>
+  <div id="navItems"></div>
+  <div class="spacer"></div>
+  <div class="foot">Enregistré automatiquement</div>
+</nav>
+
+<main>
+  <section data-id="pages" data-title="Écrans" data-icon="M4 5h16v11H4zM9 20h6M12 16v4">
+    <h1>Écrans</h1><p class="lead">Les pages affichées sur le G19, dans l'ordre. Glisse pour réordonner.</p>
+    <div class="card pages" id="pageList"></div>
+    <div class="card">
+      <div class="row"><div class="label"><b>Rouvrir sur la dernière page</b><span>Sinon, toujours la première page de la liste</span></div><div id="remember_page"></div></div>
+      <div class="row"><div class="label"><b>Au lancement d'un jeu</b><span>Page affichée automatiquement</span></div><div id="game_page"></div></div>
+    </div>
+  </section>
+
+  <section data-id="display" data-title="Affichage" data-icon="M12 3v2M12 19v2M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z">
+    <h1>Affichage</h1><p class="lead">Fluidité de l'écran et bandeaux de notification.</p>
+    <div class="card">
+      <div class="row"><div class="label"><b>Images par seconde</b><span>Les images identiques ne sont pas renvoyées</span></div><div id="fps"></div></div>
+      <div class="row"><div class="label"><b>Puissance max. du GPU</b><span>Échelle de la jauge, en watts</span></div><div id="gpu_power_max"></div></div>
+    </div>
+    <div class="card"><h2>Bandeaux</h2>
+      <div class="row"><div class="label"><b>Messages Discord</b><span>En bas de toutes les pages</span></div><div id="discord_toasts"></div></div>
+      <div class="row"><div class="label"><b>Notifications Windows</b><span>Toutes les applis</span></div><div id="win_toasts"></div></div>
+      <div class="row"><div class="label"><b>Durée d'affichage</b><span>En secondes</span></div><div id="toast_seconds"></div></div>
+      <div class="row"><div class="label"><b>Applis ignorées</b><span>Séparées par des virgules</span></div><input type="text" id="notif_ignore" placeholder="Sécurité Windows, PowerToys"></div>
+    </div>
+  </section>
+
+  <section data-id="keyboard" data-title="Clavier" data-icon="M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M7 14h10">
+    <h1>Rétroéclairage</h1><p class="lead">Le clavier du G19 comme voyant. Dans Logitech Gaming Software, autorise les jeux à contrôler l'éclairage.</p>
+    <div class="card">
+      <div class="row"><div class="label"><b>Voyant clavier</b><span>Désactivé, l'éclairage n'est jamais modifié</span></div><div id="backlight"></div></div>
+    </div>
+    <div class="card" id="blCard"><h2>Effets</h2>
+      <div class="row"><div class="label"><b><span class="colordot" style="background:#f85149"></span>Alertes</b><span>Clignote en rouge pendant une alerte</span></div><div id="backlight_alerts"></div></div>
+      <div class="row"><div class="label"><b><span class="colordot" style="background:#e3b341"></span>Claude attend ta réponse</b><span>Pulse en jaune</span></div><div id="backlight_waiting"></div></div>
+      <div class="row"><div class="label"><b><span class="colordot" style="background:#ff6600"></span>Claude travaille</b><span>Orange fixe</span></div><div id="backlight_working"></div></div>
+      <div class="row"><div class="label"><b><span class="colordot" style="background:#3fb950"></span>Claude a fini</b><span>Clignotements verts</span></div><div id="blinks_done"></div><div id="backlight_done"></div></div>
+      <div class="row"><div class="label"><b><span class="colordot" style="background:#5865f2"></span>Message Discord</b><span>Clignotements bleus</span></div><div id="blinks_discord"></div><div id="backlight_discord"></div></div>
+      <div class="row"><div class="label"><b><span class="colordot" style="background:#ffffff"></span>Notification Windows</b><span>Clignotements blancs</span></div><div id="blinks_notifs"></div><div id="backlight_notifs"></div></div>
+      <div class="row"><div class="label"><b>Vitesse</b><span>Clignotements et pulsation</span></div><div id="blink_speed"></div></div>
+    </div>
+    <div class="card"><h2>Au repos</h2>
+      <div class="row"><div class="label"><b>Couleur après un effet</b><span id="baseLabel"></span></div><div class="swatches" id="baseColors"></div></div>
+    </div>
+  </section>
+
+  <section data-id="alerts" data-title="Alertes" data-icon="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z">
+    <h1>Alertes</h1><p class="lead">Au-delà du seuil pendant 5 s : bandeau, cadre rouge et clavier en rouge.</p>
+    <div class="card">
+      <div class="row"><div class="label"><b>Alertes actives</b></div><div id="alerts_on"></div></div>
+    </div>
+    <div class="card" id="thresholds"><h2>Seuils</h2></div>
+  </section>
+
+  <section data-id="shortcuts" data-title="Raccourcis" data-icon="M13 2 3 14h9l-1 8 10-12h-9z">
+    <h1>Raccourcis</h1><p class="lead">Applis à ouvrir depuis le menu du G19 (touche Menu). L'appli liée à la page affichée y est toujours proposée en plus.</p>
+    <div class="card sc-list" id="scList"></div>
+    <div class="card">
+      <div class="sc-form">
+        <input type="text" id="scName" placeholder="Nom">
+        <input type="text" id="scTarget" placeholder="Cible : .exe, URL, discord://, steam://…">
+        <input type="text" id="scArgs" placeholder="Arguments (facultatif)">
+        <div></div>
+        <div class="actions">
+          <button class="btn primary" id="scSave">Ajouter</button>
+          <button class="btn" id="scBrowse">Parcourir…</button>
+          <button class="btn" id="scTest">Tester</button>
+          <button class="btn ghost" id="scCancel" hidden>Annuler</button>
+          <span class="msg" id="scMsg"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section data-id="discord" data-title="Discord" data-icon="M8 10h.01M16 10h.01M7 16s1.5 2 5 2 5-2 5-2M5 5c2-1 4-1 4-1l1 2h4l1-2s2 0 4 1c2 4 2 9 1 12-2 1.5-4 2-4 2l-1-2M5 5c-2 4-2 9-1 12 2 1.5 4 2 4 2l1-2">
+    <h1>Discord</h1><p class="lead">Salon vocal, qui parle, et messages reçus, via une application Discord à toi.</p>
+    <div class="card"><h2>Mise en place</h2>
+      <ol class="steps">
+        <li>Crée une application sur le portail développeur Discord.</li>
+        <li>Onglet OAuth2 : copie le <code>Client ID</code> et le <code>Client Secret</code>.</li>
+        <li>OAuth2 → Redirects : ajoute <code>http://localhost</code> puis Save.</li>
+        <li>Colle-les ci-dessous et autorise : accepte la fenêtre qui s'ouvre dans Discord.</li>
+      </ol>
+      <div class="row"><div class="label"><b>Client ID</b></div><input type="text" id="dcId"></div>
+      <div class="row"><div class="label"><b>Client Secret</b><span id="dcSecretHint"></span></div><input type="password" id="dcSecret"></div>
+      <div class="row"><div class="label"><span class="msg" id="dcMsg"></span></div>
+        <div class="actions"><button class="btn ghost" id="dcPortal">Portail développeur</button>
+          <button class="btn ghost danger" id="dcForget">Oublier l'accès</button>
+          <button class="btn primary" id="dcAuth">Autoriser</button></div></div>
+    </div>
+  </section>
+
+  <section data-id="weather" data-title="Météo" data-icon="M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 0 0 4 12a4 4 0 0 0 2 7z">
+    <h1>Météo</h1><p class="lead">Open-Meteo, mise à jour toutes les 15 minutes.</p>
+    <div class="card">
+      <div class="row"><div class="label"><b>Ville</b><span>Vide : position d'après ton adresse IP</span></div>
+        <input type="text" id="weather_city" placeholder="Position automatique (IP)"><button class="btn" id="cityCheck">Vérifier</button></div>
+      <p class="hint msg" id="cityMsg"></p>
+    </div>
+  </section>
+
+  <section data-id="system" data-title="Système" data-icon="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.8 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.8-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3.2 15H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 4.6V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.8 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.8H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z">
+    <h1>Système</h1><p class="lead">L'appli, son démarrage et ses sources de données.</p>
+    <div class="card">
+      <div class="row"><div class="label"><b>Appli</b><span id="appState">…</span></div>
+        <div class="actions"><button class="btn" data-ctl="start">Démarrer</button><button class="btn" data-ctl="restart">Redémarrer</button><button class="btn ghost danger" data-ctl="stop">Arrêter</button></div></div>
+      <div class="row"><div class="label"><b>Lancer avec Windows</b></div><div id="flag_startup"></div></div>
+      <div class="row"><div class="label"><b>Voyant Claude</b><span>Hooks dans ~/.claude/settings.json</span></div><div id="flag_hooks"></div></div>
+    </div>
+    <div class="card"><h2>Sources de données</h2><div class="sources" id="sources"></div></div>
+    <div class="card"><div class="row"><div class="label"><b>Dossiers</b></div>
+      <div class="actions"><button class="btn ghost" data-open="log">Journal</button><button class="btn ghost" data-open="data">Données</button><button class="btn ghost" data-open="app">Appli</button></div></div></div>
+  </section>
+</main>
+
+<aside>
+  <div class="device"><div class="screen"><img id="preview" alt=""></div><div class="keys"><i></i><i></i><i></i><i></i><i></i></div></div>
+  <div class="chips" id="chips"></div>
+</aside>
+
+<div class="toast" id="toast"><span class="dot on"></span><span id="toastText">Enregistré</span></div>
+
+<script>
+const api = () => window.pywebview.api;
+let S = {}, META = {}, previewPage = "system", editing = null;
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+
+function toast(text = "Enregistré") {
+  $("toastText").textContent = text; $("toast").classList.add("show");
+  clearTimeout(toast.t); toast.t = setTimeout(() => $("toast").classList.remove("show"), 1400);
+}
+const pending = {};
+function save(patch) {
+  Object.assign(S, patch); Object.assign(pending, patch);
+  clearTimeout(save.t);
+  save.t = setTimeout(() => { api().save({ ...pending }).then(() => toast()); for (const k in pending) delete pending[k]; }, 250);
+  refreshDisabled();
+}
+
+// --- composants ---
+function toggle(key, value, onChange) {
+  const input = el("input", { type: "checkbox", checked: !!value });
+  input.onchange = () => onChange(input.checked);
+  return el("label", { className: "switch" }, input, el("i"));
+}
+function bindToggle(key) { const host = $(key); host.replaceWith(Object.assign(toggle(key, S[key], (v) => save({ [key]: v })), { id: key })); }
+function seg(host, options, value, onChange) {
+  const box = el("div", { className: "seg", id: host.id });
+  for (const [v, label] of options) {
+    const b = el("button", { textContent: label, className: v === value ? "on" : "" });
+    b.onclick = () => { box.querySelectorAll("button").forEach((x) => x.classList.remove("on")); b.classList.add("on"); onChange(v); };
+    box.append(b);
+  }
+  host.replaceWith(box);
+}
+function stepper(key, min, max, step = 1, suffix = "") {
+  const out = el("output", { textContent: S[key] + suffix });
+  const set = (d) => { const v = Math.max(min, Math.min(max, (S[key] || min) + d)); out.textContent = v + suffix; save({ [key]: v }); };
+  const box = el("div", { className: "stepper", id: key }, el("button", { textContent: "−", onclick: () => set(-step) }), out, el("button", { textContent: "+", onclick: () => set(step) }));
+  $(key).replaceWith(box);
+}
+
+// --- sections ---
+function buildNav() {
+  const nav = $("navItems");
+  document.querySelectorAll("section").forEach((sec, i) => {
+    const b = el("button", { innerHTML: `<svg viewBox="0 0 24 24"><path d="${sec.dataset.icon}"/></svg>` });
+    b.append(sec.dataset.title);
+    b.onclick = () => { document.querySelectorAll("section, nav button").forEach((x) => x.classList.remove("active")); sec.classList.add("active"); b.classList.add("active"); };
+    nav.append(b);
+    if (i === 0) b.click();
+  });
+}
+
+function buildPages() {
+  const list = $("pageList"); list.innerHTML = "";
+  const order = [...S.pages, ...Object.keys(META.titles).filter((p) => !S.pages.includes(p))];
+  for (const id of order) {
+    const on = S.pages.includes(id);
+    const row = el("div", { className: "row" + (on ? "" : " off"), draggable: true },
+      el("span", { className: "grip", textContent: "⋮⋮" }),
+      el("div", { className: "label" }, el("b", { textContent: META.titles[id] })),
+      toggle(id, on, (v) => { row.classList.toggle("off", !v); commitPages(); }));
+    row.dataset.id = id;
+    row.onclick = (e) => { if (!e.target.closest(".switch")) setPreview(id); };
+    row.ondragstart = () => row.classList.add("dragging");
+    row.ondragend = () => { row.classList.remove("dragging"); commitPages(); };
+    list.append(row);
+  }
+  list.ondragover = (e) => {
+    e.preventDefault();
+    const dragging = list.querySelector(".dragging");
+    const after = [...list.querySelectorAll(".row:not(.dragging)")].find((r) => e.clientY < r.getBoundingClientRect().top + r.offsetHeight / 2);
+    after ? list.insertBefore(dragging, after) : list.append(dragging);
+  };
+}
+function commitPages() {
+  const pages = [...$("pageList").querySelectorAll(".row")].filter((r) => r.querySelector("input").checked).map((r) => r.dataset.id);
+  save({ pages: pages.length ? pages : ["system"] }); buildChips();
+}
+
+function buildThresholds() {
+  const card = $("thresholds");
+  for (const [key, [label, unit]] of Object.entries(META.rules)) {
+    const val = META.thresholds[key];
+    const out = el("span", { className: "value", textContent: val ? `${val} ${unit}` : "désactivé" });
+    const range = el("input", { type: "range", min: 0, max: unit === "%" ? 100 : 120, value: val });
+    range.oninput = () => { out.textContent = +range.value ? `${range.value} ${unit}` : "désactivé"; };
+    range.onchange = () => { META.thresholds[key] = +range.value; save({ alerts: { ...META.thresholds } }); };
+    card.append(el("div", { className: "row" }, el("div", { className: "label" }, el("b", { textContent: label }), el("span", { textContent: "0 = désactivé" })), range, out));
+  }
+}
+
+function buildColors() {
+  const box = $("baseColors"); box.innerHTML = "";
+  const current = S.backlight_base;
+  for (const [hex, name] of META.baseColors.filter(([h]) => h)) {
+    box.append(el("div", { className: "swatch" + (hex === current ? " on" : ""), title: name, style: `background:${hex}`, onclick: () => { save({ backlight_base: hex }); buildColors(); } }));
+  }
+  const known = META.baseColors.some(([h]) => h === current);
+  const custom = el("div", { className: "swatch custom" + (current && !known ? " on" : ""), title: "Couleur perso" });
+  const picker = el("input", { type: "color", value: current || "#ffffff" });
+  picker.onchange = () => { save({ backlight_base: picker.value }); buildColors(); };
+  custom.append(picker); box.append(custom);
+  box.append(el("button", { className: "btn ghost" + (!current ? " on" : ""), textContent: "Restaurer", title: "Réappliquer l'éclairage sauvegardé avant le premier effet", onclick: () => { save({ backlight_base: "" }); buildColors(); } }));
+  const label = current ? (META.baseColors.find(([h]) => h === current) || [, current])[1] : "éclairage sauvegardé avant le premier effet";
+  $("baseLabel").textContent = current ? `Couleur : ${label}` : "Réapplique l'" + label;
+}
+
+function buildShortcuts() {
+  const list = $("scList"); list.innerHTML = "";
+  if (!S.shortcuts.length) list.append(el("p", { className: "hint", textContent: "Aucun raccourci.", style: "padding:14px 18px" }));
+  S.shortcuts.forEach((sc, i) => {
+    const up = el("button", { className: "btn ghost", textContent: "↑", disabled: i === 0, onclick: () => moveShortcut(i, -1) });
+    list.append(el("div", { className: "row" },
+      el("div", { className: "label" }, el("b", { textContent: sc.name }), el("span", { textContent: sc.target + (sc.args ? " " + sc.args : "") })),
+      el("div", { className: "actions" }, up,
+        el("button", { className: "btn ghost", textContent: "Modifier", onclick: () => editShortcut(i) }),
+        el("button", { className: "btn ghost danger", textContent: "Supprimer", onclick: () => { S.shortcuts.splice(i, 1); save({ shortcuts: S.shortcuts }); buildShortcuts(); } }))));
+  });
+}
+function moveShortcut(i, d) { const s = S.shortcuts; [s[i], s[i + d]] = [s[i + d], s[i]]; save({ shortcuts: s }); buildShortcuts(); }
+function editShortcut(i) {
+  editing = i; const sc = S.shortcuts[i];
+  $("scName").value = sc.name; $("scTarget").value = sc.target; $("scArgs").value = sc.args || "";
+  $("scSave").textContent = "Enregistrer"; $("scCancel").hidden = false;
+}
+function resetShortcutForm() { editing = null; ["scName", "scTarget", "scArgs"].forEach((k) => ($(k).value = "")); $("scSave").textContent = "Ajouter"; $("scCancel").hidden = true; }
+function formShortcut() {
+  const sc = { name: $("scName").value.trim(), target: $("scTarget").value.trim(), args: $("scArgs").value.trim() };
+  if (!sc.name || !sc.target) { $("scMsg").textContent = "Un nom et une cible sont nécessaires."; return null; }
+  $("scMsg").textContent = ""; return sc;
+}
+
+function buildDiscord(d) {
+  $("dcId").value = d.clientId;
+  $("dcSecret").placeholder = d.hasSecret ? "•••••••• (enregistré)" : "";
+  $("dcMsg").className = "msg" + (d.authorized ? " ok" : "");
+  $("dcMsg").textContent = d.authorized ? `✓ Accès autorisé — renouvelé automatiquement (prochain le ${d.expires})` : "Pas encore autorisé";
+}
+
+function buildChips() {
+  const box = $("chips"); box.innerHTML = "";
+  for (const [id, title] of Object.entries(META.titles)) box.append(el("button", { textContent: title, className: id === previewPage ? "on" : "", onclick: () => setPreview(id) }));
+}
+function setPreview(id) { previewPage = id; buildChips(); }
+
+function refreshDisabled() {
+  $("blCard").querySelectorAll(".row").forEach((r) => r.classList.toggle("disabled", !S.backlight));
+  for (const k of ["done", "discord", "notifs"]) $("blinks_" + k).style.opacity = S["backlight_" + k] ? 1 : 0.35;
+}
+
+// --- boucles ---
+let busy = false;
+async function tickPreview() {
+  if (busy) return; busy = true;
+  try { const src = await api().preview(previewPage); if (src) $("preview").src = src; } finally { busy = false; }
+}
+async function tickStatus() {
+  const st = await api().status();
+  $("runDot").classList.toggle("on", st.running); $("runText").textContent = st.running ? "en cours" : "arrêtée";
+  $("appState").textContent = st.running ? "En cours d'exécution" : "Arrêtée";
+  const box = $("sources"); box.innerHTML = "";
+  for (const [name, ok, detail] of st.sources) box.append(el("div", {}, el("span", { className: "dot" + (ok ? " on" : "") }), name, el("span", { textContent: detail || "", title: detail || "" })));
+}
+
+// --- démarrage ---
+window.addEventListener("pywebviewready", async () => {
+  META = await api().state(); S = META.settings;
+  buildNav(); buildPages(); buildThresholds(); buildColors(); buildShortcuts(); buildDiscord(META.discord); buildChips();
+  ["remember_page", "discord_toasts", "win_toasts", "backlight", "backlight_alerts", "backlight_waiting", "backlight_working", "backlight_done", "backlight_discord", "backlight_notifs", "alerts_on"].forEach(bindToggle);
+  stepper("fps", 2, 30); stepper("gpu_power_max", 100, 700, 5, " W"); stepper("toast_seconds", 2, 30, 1, " s");
+  stepper("blinks_done", 1, 10, 1, "×"); stepper("blinks_discord", 1, 10, 1, "×"); stepper("blinks_notifs", 1, 10, 1, "×");
+  seg($("game_page"), META.gamePages.map(([v, l]) => [v, l === "aucune" ? "Ne rien changer" : l]), S.game_page, (v) => save({ game_page: v }));
+  seg($("blink_speed"), META.blinkSpeeds.map((v) => [v, v[0].toUpperCase() + v.slice(1)]), S.blink_speed, (v) => save({ blink_speed: v }));
+  $("notif_ignore").value = S.notif_ignore.join(", ");
+  $("notif_ignore").onchange = (e) => save({ notif_ignore: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) });
+  $("weather_city").value = S.weather_city;
+  $("weather_city").onchange = (e) => save({ weather_city: e.target.value.trim() });
+  $("cityCheck").onclick = async () => {
+    $("cityMsg").className = "hint msg"; $("cityMsg").textContent = "Recherche…";
+    const r = await api().check_city($("weather_city").value.trim());
+    $("cityMsg").className = "hint msg " + (r.ok ? "ok" : "err"); $("cityMsg").textContent = (r.ok ? "✓ " : "✗ ") + r.message;
+  };
+  for (const flag of ["startup", "hooks"]) {
+    $("flag_" + flag).replaceWith(Object.assign(toggle(flag, META[flag], async (v) => { const r = await api().set_flag(flag, v); toast(r.ok ? "Enregistré" : "Impossible : " + r.error); }), { id: "flag_" + flag }));
+  }
+  document.querySelectorAll("[data-ctl]").forEach((b) => (b.onclick = async () => { toast({ start: "Démarrage…", restart: "Redémarrage…", stop: "Arrêt…" }[b.dataset.ctl]); await api().control(b.dataset.ctl); tickStatus(); }));
+  document.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => api().open(b.dataset.open)));
+  $("scSave").onclick = () => { const sc = formShortcut(); if (!sc) return; editing === null ? S.shortcuts.push(sc) : (S.shortcuts[editing] = sc); save({ shortcuts: S.shortcuts }); buildShortcuts(); resetShortcutForm(); };
+  $("scCancel").onclick = resetShortcutForm;
+  $("scBrowse").onclick = async () => { const p = await api().browse_exe(); if (p) { $("scTarget").value = p; if (!$("scName").value) $("scName").value = p.split("\\").pop().replace(/\.(exe|lnk)$/i, ""); } };
+  $("scTest").onclick = async () => { const sc = formShortcut(); if (!sc) return; const r = await api().test_shortcut(sc.target, sc.args); $("scMsg").textContent = r.ok ? "Lancé" : "Impossible : " + r.error; };
+  $("dcPortal").onclick = () => api().discord_portal();
+  $("dcForget").onclick = async () => buildDiscord(await api().discord_forget());
+  $("dcAuth").onclick = async () => {
+    $("dcMsg").className = "msg"; $("dcMsg").textContent = "Accepte la demande d'autorisation dans Discord…";
+    const r = await api().discord_authorize($("dcId").value.trim(), $("dcSecret").value.trim());
+    $("dcMsg").className = "msg " + (r.ok ? "ok" : "err"); $("dcMsg").textContent = r.message;
+  };
+  refreshDisabled();
+  previewPage = S.pages[0]; buildChips();
+  tickStatus(); setInterval(tickStatus, 2500);
+  tickPreview(); setInterval(tickPreview, 300);
+});
+</script>
+</body>
+</html>
