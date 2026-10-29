@@ -861,15 +861,15 @@ def header(d, index, count, sessions, t, discord=None, alerts=None, title="", do
     if sessions is None:
         pass
     elif not shown:
-        claude_icon(d, x - 7, 12, 15, MUTED)     # au repos : étoile grise
+        claude_icon(d, x - 7, 12, 15, HEAD_MUTED)   # au repos : étoile grise (claire sur le bleu XP)
         x -= 14
     else:
+        # un nombre par état, dans sa couleur, sans pastille : la couleur suffit
         for st in shown:
             n = str(counts[st])
             d.text((x, 12), n, font=font(13, True), fill=STATE_COLOR[st], anchor="rm")
-            x -= d.textlength(n, font=font(13, True)) + 9
-            state_dot(d, x, 12, st, t)
-            x -= 12
+            x -= d.textlength(n, font=font(13, True)) + 5
+        x -= 2
         # étoile de la couleur de l'état le plus urgent : jaune (attend, clignote), orange
         # (travaille, tourne), vert (a fini)
         top = shown[-1]
