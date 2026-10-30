@@ -905,7 +905,9 @@ class ConfigApp(tk.Tk):
                           ("Actualiser", self._load_devices)):
             ttk.Button(btns, text=text, command=cmd).pack(side="left", padx=(0, 4))
         ttk.Label(f, style="Muted.TLabel", wraplength=340, justify="left",
-                  text="Changer de profil : sur l'écran Audio du G19, OK puis ◄ ► (ou OK, "
+                  text="Sans profil créé ici, le G19 propose « Casque » et « Haut-parleurs », "
+                       "reconnus tout seuls d'après le nom des sorties. "
+                       "Changer de profil : sur l'écran Audio du G19, OK puis ◄ ► (ou OK, "
                        "OK : profil suivant) · menu du G19 · clic droit sur l'icône G19 de la "
                        "barre des tâches → Profil audio. Pense à « Enregistrer » en bas.").grid(
             row=7, column=0, columnspan=3, sticky="w", pady=(10, 0))

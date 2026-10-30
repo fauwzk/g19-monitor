@@ -90,6 +90,45 @@ def active_profile(profiles, outputs, out_id, inputs, in_id):
     return None
 
 
+# profils automatiques (aucun profil créé dans l'utilitaire) : casque et haut-parleurs
+# reconnus à leur nom ; sortie seule, micro et volume inchangés
+NOT_REAL = ("steam streaming", "hdmi", "displayport", " - chat", "microphone mix")
+HEADSET_SOFT = ("ngenuity", "sonar", "g hub", "nahimic", "spatial")   # mixeur du casque d'abord
+HEADSET = ("casque", "headset", "headphone", "écouteurs", "ecouteurs", "earphone", "hyperx",
+           "arctis", "logitech g", "razer", "corsair", "steelseries", "astro", "buds")
+SPEAKERS = ("haut-parleurs", "speakers", "enceintes", "speaker", "realtek")
+
+
+def _has(name, words):
+    return any(w in name.casefold() for w in words)
+
+
+def _headset_score(name):
+    soft, head = _has(name, HEADSET_SOFT), _has(name, HEADSET)
+    return 2 if soft else 1 if head else 0     # le mixeur du casque (son spatial) d'abord
+
+
+def _speaker_score(name):
+    return 1 if _has(name, SPEAKERS) and not _headset_score(name) else 0
+
+
+def auto_profiles(outputs, current=None):
+    """[casque, haut-parleurs] devinés parmi les sorties [(id, nom)] ; [] si l'un des deux
+    manque. À score égal, la sortie par défaut actuelle gagne, puis l'ordre alphabétique."""
+    real = [(i, n) for i, n in outputs if not _has(n, NOT_REAL)]
+
+    def best(score):
+        ranked = sorted(((score(n), i == current, i, n) for i, n in real),
+                        key=lambda r: (-r[0], not r[1], r[3].casefold()))
+        return ranked[0][2:] if ranked and ranked[0][0] > 0 else None
+
+    head, spk = best(_headset_score), best(_speaker_score)
+    if not head or not spk:
+        return []
+    return [{"name": "Casque", "out": head[1], "out_id": head[0], "auto": True},
+            {"name": "Haut-parleurs", "out": spk[1], "out_id": spk[0], "auto": True}]
+
+
 def _endpoints(flow):
     """[(id, nom court)] des périphériques actifs et l'id de celui par défaut (thread COM)."""
     enum = AudioUtilities.GetDeviceEnumerator()

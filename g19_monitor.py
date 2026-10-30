@@ -635,8 +635,9 @@ def run():
                     elif res and res[0] == "settings":
                         c.media = media.state
                         menu.update_status = c.updater.status if c.updater else ""
-                        menu.audio_active = c.volume.active_profile(mixer.profiles(c))
-                        menu.show(cfg, page_action(page, c))
+                        profs = mixer.profiles(c)
+                        menu.audio_active = c.volume.active_profile(profs)
+                        menu.show(cfg, page_action(page, c), profs)
                     continue
                 if fan_panel is not None:
                     ids = [pid for pid, _ in FAN_CHIPS]

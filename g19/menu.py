@@ -119,8 +119,9 @@ class SettingsMenu:
         self.update_status = ""  # dernière vérification des mises à jour (affichée en tête)
         self.audio_active = None  # profil audio en cours (indice), affiché « actif »
 
-    def show(self, cfg, page_action=None):
-        """Ouvre le menu ; `page_action` = (libellé, cible, args) lié à la page affichée."""
+    def show(self, cfg, page_action=None, audio_profiles=None):
+        """Ouvre le menu ; `page_action` = (libellé, cible, args) lié à la page affichée ;
+        `audio_profiles` : profils audio proposés (ceux des réglages par défaut)."""
         launch = []
         if page_action:
             label, target, args = page_action
@@ -133,7 +134,8 @@ class SettingsMenu:
                 ("update_check", "Vérifier les mises à jour", "action", ("update",))]
         profiles = [(None, "Audio", "title", None)] + [
             (f"audio_profile_{i}", f"Profil · {p['name']}", "action", ("audio_profile", i))
-            for i, p in enumerate(cfg.get("audio_profiles") or []) if p.get("name")]
+            for i, p in enumerate(cfg.get("audio_profiles") or [] if audio_profiles is None
+                                  else audio_profiles) if p.get("name")]
         self.items = (head + THEME_ITEMS + (profiles if len(profiles) > 1 else [])
                       + ([(None, "Ouvrir", "title", None)] + launch if launch else [])
                       + SETTINGS_ITEMS)
