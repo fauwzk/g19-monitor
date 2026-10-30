@@ -119,6 +119,8 @@ DEFAULTS = {
     "color_done": "#00ff33",
     "color_discord": "#5966ff",
     "color_notif": "#ffffff",
+    "color_whatsapp": "#00ff40",     # notification WhatsApp (au lieu du blanc)
+    "color_snap": "#fff200",         # notification Snapchat
     "backlight_base": "#ffffff",     # couleur de repos après un effet ("" = éclairage sauvegardé)
     "weather_city": "",              # ville de la page météo
     "theme": "",                     # écran du G19 : voir THEMES
@@ -157,7 +159,8 @@ PULSE_SPEEDS = {"très lent": 1000, "lent": 600, "normal": 300, "rapide": 180,
 
 BLINK_RANGE = (60, 1000)  # ms par clignotement
 COLOR_KEYS = {"alert": "color_alert", "waiting": "color_waiting", "working": "color_working",
-              "done": "color_done", "discord": "color_discord", "notif": "color_notif"}
+              "done": "color_done", "discord": "color_discord", "notif": "color_notif",
+              "whatsapp": "color_whatsapp", "snap": "color_snap"}
 
 
 def blink_ms(value, default=300):

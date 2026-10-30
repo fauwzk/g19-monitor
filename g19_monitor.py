@@ -70,7 +70,7 @@ try:
     from g19.gpu import GpuMonitor
     from g19.lyrics import Lyrics
     from g19.media import MediaMonitor
-    from g19.notifications import WindowsNotifications
+    from g19.notifications import WindowsNotifications, flash_kind
     from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, RECAP_SECONDS, Ctx, has_lyrics, ignored,
                             render, render_away, render_fans, render_idle, render_menu, render_recap,
                             render_splash, theme_of, toast_candidates)
@@ -247,7 +247,8 @@ def sources_compile():
         return False
 
 
-BLINK_COUNT_KEY = {"done": "blinks_done", "discord": "blinks_discord", "notif": "blinks_notifs"}
+BLINK_COUNT_KEY = {"done": "blinks_done", "discord": "blinks_discord", "notif": "blinks_notifs",
+                   "whatsapp": "blinks_notifs", "snap": "blinks_notifs"}
 TEST_FILE = "flash_test.json"   # demandes de test envoyées par l'utilitaire
 PULSE_TESTS = ("waiting",)   # tests de pulsation (montrée quelques secondes)
 PULSE_TEST_SECONDS = 6
@@ -773,7 +774,8 @@ def run():
                 # les notifs de l'appli Claude doublonnent le voyant Claude (flash vert) : ignorées
                 if (cfg["backlight"] and cfg["backlight_notifs"] and latest and not quiet
                         and not ignored(c, latest) and latest["app"].lower() != "claude"):
-                    backlight.flash("notif", cfg["blinks_notifs"], blink_ms(cfg))
+                    # WhatsApp en vert, Snapchat en jaune, les autres en blanc
+                    backlight.flash(flash_kind(latest), cfg["blinks_notifs"], blink_ms(cfg))
             backlight.speed_ms = blink_ms(cfg)
             backlight.pulse_ms = settings.pulse_ms(cfg["pulse_ms"], 300)
             backlight.colors = {k: settings.hex_to_pct(cfg.get(key)) for k, key

@@ -41,7 +41,8 @@ LIVE = "● G19 en direct"
 # case du rétroéclairage → réglage de sa couleur
 COLOR_OF = {"backlight_alerts": "color_alert", "backlight_waiting": "color_waiting",
             "backlight_working": "color_working", "backlight_done": "color_done",
-            "backlight_discord": "color_discord", "backlight_notifs": "color_notif"}
+            "backlight_discord": "color_discord", "backlight_notifs": "color_notif",
+            "notif_whatsapp": "color_whatsapp", "notif_snap": "color_snap"}
 NIGHT_THEMES = {"": "inchangé", "dark": "Sombre", "g19": "G19", "light": "Clair",
                 "g15": "Rétro G15", "neon": "Néon", "dynamic": "Dynamique",
                 "red": "Rouge nuit", "contrast": "Haut contraste", "glacier": "Glacier",
@@ -633,17 +634,26 @@ class ConfigApp(tk.Tk):
                 ("backlight_working", "Couleur fixe quand Claude travaille"),
                 ("backlight_done", "Clignote quand Claude a fini"),
                 ("backlight_discord", "Clignote à chaque message Discord"),
-                ("backlight_notifs", "Clignote à chaque notification Windows")]
+                ("backlight_notifs", "Clignote à chaque notification Windows"),
+                ("notif_whatsapp", "WhatsApp : sa propre couleur"),
+                ("notif_snap", "Snapchat : sa propre couleur")]
         self.blinks = {}
         self.colors = {}
         self.color_swatches = {}
         blink_of = {"backlight_done": "blinks_done", "backlight_discord": "blinks_discord",
                     "backlight_notifs": "blinks_notifs"}
         for i, (key, text) in enumerate(opts):
-            var = tk.BooleanVar(value=self.s[key])
-            self.backlight[key] = var
-            ttk.Checkbutton(box, text=text, variable=var).grid(row=i, column=0, sticky="w",
-                                                              padx=(0 if i == 0 else 16, 0))
+            if key.startswith("notif_"):
+                # couleur à part pour une appli : même réglage (et nombre) que les notifs
+                ttk.Label(box, text=text, style="Muted.TLabel").grid(row=i, column=0,
+                                                                     sticky="w", padx=(40, 0))
+                ttk.Button(box, text="Tester", command=lambda k=key: self._test_flash(k)).grid(
+                    row=i, column=3, padx=(6, 0))
+            else:
+                var = tk.BooleanVar(value=self.s[key])
+                self.backlight[key] = var
+                ttk.Checkbutton(box, text=text, variable=var).grid(
+                    row=i, column=0, sticky="w", padx=(0 if i == 0 else 16, 0))
             if key in blink_of:
                 n = tk.IntVar(value=self.s[blink_of[key]])
                 self.blinks[blink_of[key]] = n
@@ -842,8 +852,8 @@ class ConfigApp(tk.Tk):
     def _test_flash(self, key):
         """Demande à l'appli (qui pilote le clavier) de jouer ce clignotement, avec les valeurs
         affichées ici, même non enregistrées."""
-        kind = key.replace("backlight_", "").replace("notifs", "notif")
-        blink_key = {"done": "blinks_done", "discord": "blinks_discord", "notif": "blinks_notifs"}[kind]
+        kind = key.replace("backlight_", "").replace("notif_", "").replace("notifs", "notif")
+        blink_key = {"done": "blinks_done", "discord": "blinks_discord"}.get(kind, "blinks_notifs")
         if not instance.is_running():
             self._flash("L'appli doit tourner pour piloter le clavier.")
             return

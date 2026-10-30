@@ -35,6 +35,8 @@ EFFECTS = {
     "done": ("blink", 0, 100, 20, 0),
     "discord": ("blink", 35, 40, 100, 0),
     "notif": ("blink", 100, 100, 100, 0),
+    "whatsapp": ("blink", 0, 100, 25, 0),     # notification WhatsApp : vert
+    "snap": ("blink", 100, 95, 0, 0),         # notification Snapchat : jaune
 }
 BLINK_PERIOD = 300          # ms pour un clignotement (allumé puis éteint)
 

@@ -49,6 +49,8 @@ SETTINGS_ITEMS = [
     ("test_done", "Tester · vert (Claude a fini)", "action", ("test", "done")),
     ("test_discord", "Tester · bleu (Discord)", "action", ("test", "discord")),
     ("test_notif", "Tester · blanc (notif Windows)", "action", ("test", "notif")),
+    ("test_whatsapp", "Tester · vert (WhatsApp)", "action", ("test", "whatsapp")),
+    ("test_snap", "Tester · jaune (Snapchat)", "action", ("test", "snap")),
     (None, "Écran", "title", None),
     ("discord_toasts", "Bandeau Discord", "bool", None),
     ("win_toasts", "Bandeau notifs Windows", "bool", None),
