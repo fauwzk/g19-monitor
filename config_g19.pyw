@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import urllib.error
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -22,7 +23,7 @@ from PIL import Image, ImageTk  # noqa: E402
 
 import install_hooks  # noqa: E402
 import install_startup  # noqa: E402
-from g19 import afterburner, backup, config, instance, night, remote, rtss, screen, settings, steam_live, theme, version, volume  # noqa: E402
+from g19 import afterburner, backup, config, instance, night, remote, rtss, screen, settings, steam_live, theme, version, volume, fuel  # noqa: E402
 from g19 import discord as discord_rpc  # noqa: E402
 from g19.alerts import DEFAULT_THRESHOLDS, RULES  # noqa: E402
 from g19.launcher import launch  # noqa: E402
@@ -66,6 +67,7 @@ PAGE_INFO = {
     "Alertes et clavier": ("\uE7BA", "Seuils d'alerte et rétroéclairage du clavier comme voyant."),
     "Raccourcis": ("\uE71B", "Les applis à ouvrir depuis le menu du G19."),
     "Audio": ("\uE7F5", "Profils audio : casque, haut-parleurs\u2026 \u00E0 changer d'un geste."),
+    "Carburant": ("\uE804", "Prix des stations suivies dans Home Assistant."),
     "Discord": ("\uE716", "Connexion à Discord : salon vocal, messages, appels."),
     "Steam": ("\uE7FC", "Téléchargements et amis en ligne."),
     "Système": ("\uE713", "L'appli, le démarrage, les ventilateurs et la sauvegarde."),
@@ -80,6 +82,8 @@ def icon_font():
     return None
 
 
+FUEL_AUTO = "automatique"
+FUEL_MAIN = {"": FUEL_AUTO, **{f: f for f in ("Gazole", "E10", "SP95", "SP98", "E85", "GPLc")}}
 AUDIO_KEEP = "inchangé"
 AUDIO_KEEP_IN = "micro inchangé"
 
@@ -192,6 +196,7 @@ class ConfigApp(tk.Tk):
         self._tab_alerts(nb)
         self._tab_shortcuts(nb)
         self._tab_audio(nb)
+        self._tab_fuel(nb)
         self._tab_discord(nb)
         self._tab_steam(nb)
         self._tab_system(nb)
@@ -483,6 +488,7 @@ class ConfigApp(tk.Tk):
         self.voice_toasts = tk.BooleanVar(value=self.s["voice_toasts"])
         self.stream_toasts = tk.BooleanVar(value=self.s["stream_toasts"])
         self.docker_toasts = tk.BooleanVar(value=self.s["docker_toasts"])
+        self.fuel_toasts = tk.BooleanVar(value=self.s["fuel_toasts"])
         self.page_toasts = tk.BooleanVar(value=self.s["page_toasts"])
         self.driver_toasts = tk.BooleanVar(value=self.s["driver_toasts"])
         self.idle_screen = tk.BooleanVar(value=self.s["idle_screen"])
@@ -511,6 +517,9 @@ class ConfigApp(tk.Tk):
                      "haut tant que la session dure.")
         self._switch(card, "Conteneur Docker en panne", self.docker_toasts,
                      "Arrêté en erreur, ou qui redémarre en boucle (3 fois en 5 min).")
+        self._switch(card, "Carburant en rupture ou de retour", self.fuel_toasts,
+                     "Une station suivie dans Home Assistant (Prix Carburant) n'a plus un "
+                     "carburant, ou l'a de nouveau.")
         self._switch(card, "Page de nouveau disponible", self.page_toasts,
                      "Les pages Discord et Docker sont masquées tant que l'appli est fermée ; "
                      "un bandeau prévient quand elles reviennent.")
@@ -1016,6 +1025,78 @@ class ConfigApp(tk.Tk):
 
         threading.Thread(target=work, daemon=True).start()
 
+    def _tab_fuel(self, nb):
+        f = self._tab(nb, "Carburant")
+        ttk.Label(f, justify="left", wraplength=360, text=(
+            "Les prix viennent de l'intégration « Prix Carburant » de Home Assistant : toutes "
+            "ses stations s'affichent sur la page Carburant du G19.\n\n"
+            "1. Dans Home Assistant : ton profil → Sécurité → Jetons d'accès longue durée → "
+            "Créer un jeton.\n"
+            "2. Colle l'adresse de Home Assistant et le jeton ici, puis « Enregistrer et "
+            "tester ».\n"
+            "Le jeton reste sur ce PC (dossier des données) et n'est envoyé qu'à cette "
+            "adresse.")).grid(row=0, column=0, columnspan=2, sticky="w")
+        url, token = fuel.load_ha()
+        self.ha_url, self.ha_token = tk.StringVar(value=url), tk.StringVar(value=token)
+        ttk.Label(f, text="Adresse").grid(row=1, column=0, sticky="w", pady=(10, 2))
+        ttk.Entry(f, textvariable=self.ha_url, width=36).grid(row=1, column=1, sticky="w",
+                                                              pady=(10, 2))
+        ttk.Label(f, text="Jeton").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Entry(f, textvariable=self.ha_token, width=36, show="•").grid(row=2, column=1,
+                                                                         sticky="w")
+        btns = ttk.Frame(f)
+        btns.grid(row=3, column=0, columnspan=2, sticky="w", pady=8)
+        ttk.Button(btns, text="Enregistrer et tester", command=self._save_ha).pack(side="left")
+        ttk.Button(btns, text="Ouvrir la page des jetons", command=self._open_ha_tokens).pack(
+            side="left", padx=6)
+        self.ha_state = ttk.Label(f, text="", wraplength=360, justify="left")
+        self.ha_state.grid(row=4, column=0, columnspan=2, sticky="w")
+        self.fuel_main = tk.StringVar(value=FUEL_MAIN.get(self.s["fuel_main"], FUEL_AUTO))
+        ttk.Label(f, text="Mis en avant").grid(row=5, column=0, sticky="w", pady=(12, 2))
+        ttk.Combobox(f, textvariable=self.fuel_main, state="readonly", width=16,
+                     values=list(FUEL_MAIN.values())).grid(row=5, column=1, sticky="w",
+                                                           pady=(12, 2))
+        ttk.Label(f, style="Muted.TLabel", wraplength=360, justify="left",
+                  text="Carburant dont le prix le plus bas s'affiche en grand en haut de la "
+                       "page (automatique : celui que le plus de stations vendent). Pense à "
+                       "« Enregistrer » en bas pour ce choix.").grid(
+            row=6, column=0, columnspan=2, sticky="w")
+
+    def _open_ha_tokens(self):
+        url = self.ha_url.get().strip().rstrip("/")
+        if url:
+            webbrowser.open(f"{url}/profile/security")
+        else:
+            self.ha_state.config(text="Renseigne d'abord l'adresse de Home Assistant.")
+
+    def _save_ha(self):
+        url, token = self.ha_url.get().strip().rstrip("/"), self.ha_token.get().strip()
+        if url and not url.startswith(("http://", "https://")):
+            url = "https://" + url
+            self.ha_url.set(url)
+        fuel.save_ha(url, token)
+        if not (url and token):
+            self.ha_state.config(text="Accès oublié." if not (url or token) else
+                                 "Il faut l'adresse et le jeton.")
+            return
+        self.ha_state.config(text="Test en cours…")
+
+        def work():
+            try:
+                stations = fuel.parse_states(fuel.fetch_states(url, token))
+                prices = sum(len(s["fuels"]) for s in stations.values())
+                text = (f"Connecté : {len(stations)} station(s), {prices} prix. La page "
+                        "Carburant du G19 se met à jour dans la minute." if stations else
+                        "Connecté, mais aucune station « Prix Carburant » trouvée.")
+            except urllib.error.HTTPError as e:
+                msg = fuel.http_error_text(e)
+                text = msg[0].upper() + msg[1:] + "."
+            except Exception as e:
+                text = f"Home Assistant injoignable : {e.__class__.__name__}"
+            self.after(0, lambda: self.ha_state.config(text=text))
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _tab_discord(self, nb):
         f = self._tab(nb, "Discord")
         steps = ("1. Crée une application sur le portail développeur Discord.\n"
@@ -1230,6 +1311,8 @@ class ConfigApp(tk.Tk):
             "notif_ignore": [a.strip() for a in self.notif_ignore.get().split(",") if a.strip()],
             "shortcuts": self._shortcuts,
             "audio_profiles": self._audio_profiles,
+            "fuel_main": {v: k for k, v in FUEL_MAIN.items()}.get(self.fuel_main.get(), ""),
+            "fuel_toasts": self.fuel_toasts.get(),
             "weather_city": self.city.get().strip(),
             "alerts_on": self.alerts_on.get(),
             "alerts": {k: self._int(v, DEFAULT_THRESHOLDS[k], 0, 120)
@@ -1292,6 +1375,7 @@ class ConfigApp(tk.Tk):
                   "ping_target": self.ping_target, "steam_toasts": self.steam_toasts,
                   "voice_toasts": self.voice_toasts,
                   "stream_toasts": self.stream_toasts, "docker_toasts": self.docker_toasts,
+                  "fuel_toasts": self.fuel_toasts,
                   "page_toasts": self.page_toasts, "driver_toasts": self.driver_toasts,
                   "auto_update": self.auto_update,
                   "wallpaper_bg": self.wallpaper_bg, "wallpaper_dim": self.wallpaper_dim,

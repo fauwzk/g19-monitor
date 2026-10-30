@@ -54,6 +54,7 @@ PAGE_TITLES = {
     "batteries": "Batteries",
     "network": "Réseau",
     "docker": "Docker",
+    "fuel": "Carburant",
     "screen": "Écran PC",
 }
 
@@ -75,6 +76,8 @@ DEFAULTS = {
     "voice_toasts": True,            # bandeau quand quelqu'un rejoint / quitte l'appel Discord
     "steam_toasts": True,            # bandeau quand un ami Steam se connecte
     "stream_toasts": True,           # bandeau quand quelqu'un se connecte en streaming
+    "fuel_toasts": True,             # bandeau quand un carburant est en rupture ou revient
+    "fuel_main": "",                 # carburant mis en avant (vide : le plus courant)
     "docker_toasts": True,           # bandeau quand un conteneur plante ou boucle
     "page_toasts": True,             # bandeau quand une page masquée (Discord, Docker) revient
     "driver_toasts": True,           # bandeau quand un nouveau pilote AMD est disponible

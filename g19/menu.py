@@ -58,6 +58,7 @@ SETTINGS_ITEMS = [
     ("steam_toasts", "Bandeau ami Steam connecté", "bool", None),
     ("stream_toasts", "Bandeau connexion streaming", "bool", None),
     ("docker_toasts", "Bandeau conteneur Docker en panne", "bool", None),
+    ("fuel_toasts", "Bandeau carburant en rupture / de retour", "bool", None),
     ("page_toasts", "Bandeau page de nouveau dispo", "bool", None),
     ("driver_toasts", "Bandeau nouveau pilote AMD", "bool", None),
     ("sys_alerts", "Alertes système (MAJ, disque)", "bool", None),

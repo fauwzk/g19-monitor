@@ -159,6 +159,7 @@ dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilit
 | **Batteries** | Appareils Bluetooth et leur batterie ; bandeau sous 20 % | |
 | **Réseau** | Ping chaque seconde : latence, gigue, pertes, 2 min de graphe ; bandeau en jeu sur un pic | |
 | **Docker** | Conteneurs : état, CPU, RAM, code de sortie, redémarrages ; bandeau en cas de panne ou de redémarrage en boucle | ▲ ▼ défiler |
+| **Carburant** | Prix des stations suivies dans Home Assistant (intégration Prix Carburant) : le moins cher en tête, tableau station × carburant, ruptures ; bandeau quand un carburant manque ou revient | ▲ ▼ défiler · OK relire |
 | **Écran PC** | Recopie en direct (~55 i/s) d'un écran du PC, avec le curseur | OK écran suivant · ▲ ▼ zoom |
 
 Les pages Discord et Docker sont masquées tant que l'appli ne tourne pas, et reviennent seules

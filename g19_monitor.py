@@ -49,6 +49,7 @@ try:
     from g19.updater import Updater
     from g19.amd_driver import AmdDriver
     from g19.docker_mon import DockerMonitor
+    from g19.fuel import FuelMonitor
     from g19.screencap import ScreenMirror
     from g19.streaming import Streaming
     from g19.away import Away
@@ -111,6 +112,7 @@ def make_ctx():
                net=Pinger(lambda: settings.current().get("ping_target")),
                sysw=SystemWatch(settings.current), git=GitStatus(), away=Away(),
                streaming=Streaming(), docker=DockerMonitor(), mirror=ScreenMirror(),
+               fuel=FuelMonitor(),
                driver=AmdDriver(),
                updater=Updater(instance.APP_DIR,
                                lambda: settings.current().get("auto_update", True)))
@@ -343,6 +345,8 @@ def visible_pages(c, cfg):
         hidden.add("discord")
     if not (c.docker and c.docker.status == ""):     # "" : le moteur Docker répond
         hidden.add("docker")
+    if not c.fuel or c.fuel.status == "Home Assistant non configuré":
+        hidden.add("fuel")
     return [p for p in cfg["pages"] if p not in hidden] or cfg["pages"][:1]
 
 
@@ -726,6 +730,10 @@ def run():
                     c.mirror.next_screen()
                 elif page == "screen" and b in ("up", "down"):
                     c.mirror.zoom_in(1 if b == "up" else -1)
+                elif page == "fuel" and b in ("up", "down"):
+                    c.fuel_scroll += 1 if b == "down" else -1
+                elif page == "fuel" and b == "ok":
+                    c.fuel.check_now()       # relire les prix tout de suite
                 elif page == "docker" and b in ("up", "down"):
                     c.docker_scroll += 1 if b == "down" else -1
                 elif page == "history" and b == "ok":

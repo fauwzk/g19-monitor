@@ -367,6 +367,8 @@ class Ctx:
     docker: object = None        # docker_mon.DockerMonitor
     mirror: object = None        # screencap.ScreenMirror (page Écran PC)
     docker_scroll: int = 0
+    fuel: object = None          # fuel.FuelMonitor : prix des carburants (Home Assistant)
+    fuel_scroll: int = 0
     gpu_view: str = "both"       # page GPU en jeu : FPS et temps d'image, ou l'un des deux (OK)
     driver: object = None        # amd_driver.AmdDriver
     updater: object = None       # updater.Updater (mises à jour depuis GitHub)
@@ -1653,6 +1655,97 @@ def page_docker(d, c, t):
                anchor="rb")
 
 
+FUEL_ROWS = 5
+
+
+def page_fuel(d, c, t):
+    """Prix des carburants des stations suivies dans Home Assistant : le moins cher en tête,
+    puis un tableau station × carburant (moins cher en vert, rupture en rouge)."""
+    from .fuel import cheapest, fmt_price, fuels_of
+
+    fm = c.fuel
+    stations = fm.stations if fm else {}
+    if not stations:
+        msg = fm.status if fm and fm.status else "Aucune station"
+        d.text((W // 2, 104), "Carburant", font=font(16, True), fill=ACCENT, anchor="mm")
+        d.text((W // 2, 128), fit(d, msg, font(11), 290), font=font(11), fill=MUTED, anchor="mm")
+        if fm and fm.status == "Home Assistant non configuré":
+            d.text((W // 2, 146), "utilitaire → onglet Carburant", font=font(10), fill=MUTED,
+                   anchor="mm")
+        return
+    fuels = fuels_of(stations)
+    main = c.settings.get("fuel_main") or ""
+    if main not in fuels:   # carburant vendu par le plus de stations
+        main = max(fuels, key=lambda f: sum(f in s["fuels"] for s in stations.values()))
+
+    # en tête : le moins cher pour le carburant principal
+    best = cheapest(stations, main)
+    panel(d, (6, 28, W - 6, 66), 6)
+    d.text((14, 38), f"{main.upper()} LE MOINS CHER", font=font(9, True), fill=ACCENT,
+           anchor="lm")
+    if best:
+        price = fmt_price(best[0])
+        d.text((14, 55), fit(d, best[1]["short"], font(13, True), 170), font=font(13, True),
+               fill=TEXT, anchor="lm")
+        d.text((W - 32, 49), price, font=font(22, True), fill=OK, anchor="rm")
+        d.text((W - 14, 52), "€/l", font=font(9), fill=MUTED, anchor="rm")
+    else:
+        d.text((14, 55), "en rupture partout", font=font(12, True), fill=HOT, anchor="lm")
+
+    # tableau : une ligne par station, une colonne par carburant
+    x0 = 104
+    col = (W - 8 - x0) / len(fuels)
+    cell = font(11 if len(fuels) <= 5 else 10, True)
+    y = 76
+    for k, f in enumerate(fuels):
+        cx = x0 + col * (k + 0.5)
+        d.text((cx, y), f, font=font(9, True), fill=ACCENT if f == main else MUTED, anchor="mm")
+    lows = {f: (cheapest(stations, f) or (None,))[0] for f in fuels}
+    rows = list(stations.values())
+    c.fuel_scroll = max(0, min(c.fuel_scroll, len(rows) - FUEL_ROWS))
+    y = 86
+    for i, s in enumerate(rows[c.fuel_scroll:c.fuel_scroll + FUEL_ROWS]):
+        if i % 2 == 0:
+            panel(d, (6, y, W - 6, y + 26), 5)
+        name, city = s["short"], s["city"]
+        if city and name.casefold().endswith(" " + city.casefold()):
+            name = name[:-len(city)].strip()     # « Intermarché JOINVILLE » : ville dessous
+        d.text((12, y + 9), fit(d, name, font(11, True), x0 - 16), font=font(11, True),
+               fill=TEXT, anchor="lm")
+        if city and city.casefold() not in name.casefold():
+            d.text((12, y + 20), fit(d, city.title(), font(8), x0 - 16), font=font(8),
+                   fill=MUTED, anchor="lm")
+        for k, f in enumerate(fuels):
+            cx = x0 + col * (k + 0.5)
+            v = s["fuels"].get(f)
+            if not v:
+                d.text((cx, y + 13), "–", font=font(10), fill=dim(MUTED, 0.6), anchor="mm")
+            elif v["out"]:
+                d.text((cx, y + 13), "rupture", font=font(8, True), fill=HOT, anchor="mm")
+            else:
+                stale = v["age"] is not None and v["age"] >= 4   # prix pas relevé depuis 4 j
+                low = lows[f] is not None and v["price"] <= lows[f] + 1e-9
+                color = OK if low else (dim(TEXT, 0.55) if stale else TEXT)
+                d.text((cx, y + 13), fmt_price(v["price"]), font=cell, fill=color, anchor="mm")
+        y += 28
+
+    # pied : fraîcheur des prix et état de la lecture
+    ages = [v["age"] for s in rows for v in s["fuels"].values() if v["age"] is not None]
+    foot = f"prix relevés {fmt_ago(min(ages) * 86400)}" if ages else ""
+    if any(a >= 4 for a in ages):
+        foot += " · en gris : pas relevé depuis 4 j"
+    if fm.status:
+        foot, color = fm.status, WARN
+    else:
+        color = dim(MUTED, 0.85)
+    span = ""
+    if len(rows) > FUEL_ROWS:
+        span = f"{c.fuel_scroll + 1}-{min(len(rows), c.fuel_scroll + FUEL_ROWS)}/{len(rows)} · ▲▼"
+        d.text((W - 8, 236), span, font=font(9), fill=MUTED, anchor="rb")
+    room = W - 20 - (int(d.textlength(span, font=font(9))) + 8 if span else 0)
+    d.text((10, 236), fit(d, foot, font(9), room), font=font(9), fill=color, anchor="lb")
+
+
 def page_screen(img, d, c, t):
     """Recopie en direct d'un écran du PC ; OK change d'écran, ▲ ▼ zoom autour du curseur."""
     m = c.mirror
@@ -2477,6 +2570,10 @@ def toast_candidates(c, page, t):
     if st:
         cands.append((st[2], {"source": "Streaming", "title": st[0], "body": st[1], "icon": None,
                               "color": HOT if st[1].startswith("connecté") else MUTED}))
+    fe = c.fuel.event if c.fuel and c.settings.get("fuel_toasts", True) else None
+    if fe:
+        cands.append((fe[2], {"source": "Carburant", "title": fe[0], "body": fe[1],
+                              "icon": None, "color": HOT if "rupture" in fe[1] else OK}))
     dk = c.docker.event if c.docker and c.settings.get("docker_toasts", True) else None
     if dk:
         cands.append((dk[2], {"source": "Docker", "title": dk[0], "body": dk[1], "icon": None,
@@ -2659,6 +2756,8 @@ def render(page, c, t=None, post=True):
         page_batteries(d, c, t)
     elif page == "docker":
         page_docker(d, c, t)
+    elif page == "fuel":
+        page_fuel(d, c, t)
     elif page == "screen":
         page_screen(img, d, c, t)
     elif page == "network":
