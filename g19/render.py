@@ -2500,7 +2500,7 @@ def toast(img, d, n, cache):
         d.text((30, 219), "!", font=font(10, True), fill=color, anchor="mm")
     else:
         avatar(img, d, cache, n["icon"], 30, 216, 26, n["title"] or n["source"], color=color)
-    src = fit(d, n["source"], font(9, True), 90)
+    src = fit(d, n["source"], font(9, True), 120)
     sw = d.textlength(src, font=font(9, True))
     d.text((W - 14, 206), src, font=font(9, True), fill=color, anchor="rm")
     d.text((50, 206), fit(d, n["title"], font(12, True), W - 76 - sw), font=font(12, True),
@@ -2554,7 +2554,9 @@ def toast_candidates(c, page, t):
                               "color": OK if "rejoint" in ve[1] else MUTED}))
     if dc and dc.notifications and c.settings["discord_toasts"] and page != "discord":
         n = dc.notifications[0]
-        cands.append((dc.last_notification, {"source": "Discord", "title": n["author"],
+        # en haut à droite : le groupe ou « #salon · serveur » plutôt que « Discord »
+        cands.append((dc.last_notification, {"source": n.get("where") or "Discord",
+                                             "title": n["author"],
                                              "body": n["body"], "icon": n["icon"],
                                              "color": DISCORD}))
     if wn and wn.items and c.settings["win_toasts"] and page != "notifs":
@@ -2719,10 +2721,10 @@ def page_discord(img, d, dc, t):
         avatar(img, d, dc.avatars, n["icon"], 20, ry + 16, 24, n["author"])
         author = fit(d, n["author"], font(12, True), 150)
         d.text((40, ry + 8), author, font=font(12, True), fill=TEXT, anchor="lm")
-        where = re.search(r"\((.*)\)\s*$", n["title"] or "")
+        where = n.get("where")
         if where:
             ax = 40 + d.textlength(author, font=font(12, True)) + 6
-            d.text((ax, ry + 9), fit(d, where.group(1), font(9), 270 - ax), font=font(9),
+            d.text((ax, ry + 9), fit(d, where, font(9), 270 - ax), font=font(9),
                    fill=MUTED, anchor="lm")
         d.text((W - 10, ry + 8), fmt_age(t - n["time"]), font=font(9), fill=MUTED, anchor="rm")
         d.text((40, ry + 25), fit(d, n["body"], font(11), W - 52), font=font(11),

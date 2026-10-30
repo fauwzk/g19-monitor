@@ -7,6 +7,7 @@ setup_discord.py ; les jetons sont gardés dans %LOCALAPPDATA%\\G19Monitor\\disc
 import ctypes
 import io
 import json
+import re
 import msvcrt
 import queue
 import struct
@@ -222,6 +223,7 @@ class DiscordClient:
         self._out = queue.Queue()
         self._pipe = None
         self._guilds = {}
+        self._channels = {}       # id → {"name", "type", "guild_id"} (lieu des messages)
         threading.Thread(target=self._run, daemon=True).start()
 
     # --- actions depuis l'affichage ---
@@ -307,8 +309,17 @@ class DiscordClient:
             return
         if cmd == "GET_SELECTED_VOICE_CHANNEL":
             self._set_channel(msg.get("data"))
+        elif cmd == "GET_CHANNEL" and data.get("id"):
+            self._channels[data["id"]] = {"name": data.get("name") or "",
+                                          "type": data.get("type"),
+                                          "guild_id": data.get("guild_id")}
+            gid = data.get("guild_id")
+            if gid and gid not in self._guilds:
+                self._pipe.command("GET_GUILD", {"guild_id": gid})
+            self._fill_where()
         elif cmd == "GET_GUILD" and data.get("id"):
             self._guilds[data["id"]] = data.get("name", "")
+            self._fill_where()
             if self.voice and self.voice.get("guild_id") == data["id"]:
                 self.voice["guild"] = data.get("name", "")
         elif cmd in ("GET_VOICE_SETTINGS", "SET_VOICE_SETTINGS") or evt == "VOICE_SETTINGS_UPDATE":
@@ -339,7 +350,12 @@ class DiscordClient:
         elif evt == "NOTIFICATION_CREATE":
             message = data.get("message") or {}
             author = message.get("author") or {}
+            cid = data.get("channel_id") or message.get("channel_id")
+            if cid and cid not in self._channels:
+                self._pipe.command("GET_CHANNEL", {"channel_id": cid})   # nom du groupe
             self.notifications.appendleft({
+                "channel_id": cid,
+                "where": self.where(cid, data.get("title", "")),
                 "author": author.get("global_name") or author.get("username") or data.get("title", ""),
                 "title": data.get("title", ""),
                 "body": data.get("body") or message.get("content", ""),
@@ -348,6 +364,27 @@ class DiscordClient:
             })
             self.unread += 1
             self.last_notification = time.time()
+
+    def where(self, cid, title=""):
+        """Lieu d'un message : « Les potes » (groupe), « #général · Serveur », "" en privé.
+        Tant que Discord n'a pas répondu : ce que le titre de la notification indique."""
+        ch = self._channels.get(cid)
+        if ch:
+            if ch["type"] == 1:                       # message privé : pas de lieu
+                return ""
+            if ch["type"] == 3:                       # groupe privé (nom choisi, sinon générique)
+                return ch["name"] or "groupe privé"
+            guild = self._guilds.get(ch["guild_id"], "")
+            name = f"#{ch['name']}" if ch["name"] else ""
+            return " · ".join(p for p in (name, guild) if p)
+        m = re.search(r"\((.*)\)\s*$", title or "")
+        return m.group(1) if m else ""
+
+    def _fill_where(self):
+        """Complète le lieu des messages déjà reçus quand Discord répond."""
+        for n in self.notifications:
+            if n.get("channel_id") in self._channels:
+                n["where"] = self.where(n["channel_id"], n.get("title", ""))
 
     def _set_channel(self, ch):
         old = self.voice
