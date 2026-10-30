@@ -383,6 +383,7 @@ class Ctx:
     saved_event: tuple = None    # (titre, texte, horodatage) : réglages enregistrés ailleurs
     pulse_test: tuple = None     # (effet, fin) : pulsation montrée pour un test
     claude_sel: int = 0          # page Claude : session choisie (▲ ▼), OK la met au premier plan
+    claude_sel_id: str = ""      # … retenue par son identifiant (la liste se retrie sans cesse)
     history_view: str = "temp"   # page Historique : "temp" ou "load" (bouton OK)
     steam_scroll: int = 0
     show_lyrics: bool = False    # page Média : paroles à la place du lecteur (bouton OK)

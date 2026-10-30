@@ -1,6 +1,8 @@
 """Remet au premier plan la fenêtre d'une session Claude : celle du processus parent le plus
 proche (terminal, éditeur ou appli desktop) qui possède une fenêtre visible."""
 import ctypes
+import os
+import re
 from ctypes import wintypes
 
 import psutil
@@ -17,6 +19,7 @@ user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.SetForegroundWindow.argtypes = [wintypes.HWND]
 
 GW_OWNER = 4
+HOST_ID = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")   # session de l'appli Claude desktop
 # parents qui ne sont pas « la fenêtre de la session » (on s'arrête avant)
 STOP = {"explorer.exe", "svchost.exe", "services.exe", "wininit.exe", "userinit.exe"}
 SW_RESTORE, SW_SHOW = 9, 5
@@ -54,7 +57,16 @@ def bring_to_front(hwnd):
 
 
 def focus_session(session):
-    """True si une fenêtre de la session a été mise au premier plan."""
+    """True si la session a été mise au premier plan : dans l'appli Claude, la session
+    elle-même (lien claude://, sinon l'appli resterait sur la session déjà affichée) ;
+    ailleurs (terminal, éditeur), la fenêtre de son processus parent le plus proche."""
+    host = session.get("host_id") or ""
+    if HOST_ID.match(host):
+        try:
+            os.startfile(f"claude://code/continue?session={host}")
+            return True
+        except OSError:
+            pass
     pids = session.get("pids") or []
     if not pids:
         return False

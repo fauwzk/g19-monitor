@@ -166,6 +166,11 @@ def main():
         state["context"] = ctx
     if not state.get("pids"):
         state["pids"] = ancestors()
+    # session de l'appli Claude (onglet Code) : son identifiant « local_… » permet de la
+    # rouvrir directement (claude://code/continue?session=…), pas seulement sa fenêtre
+    host = os.environ.get("CLAUDE_CODE_HOST_SESSION_ID", "")
+    if host:
+        state["host_id"] = host
     state["cwd"] = event.get("cwd") or state.get("cwd", "")
     state["event"] = name
     state["updated"] = time.time()

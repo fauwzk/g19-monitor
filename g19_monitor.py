@@ -515,6 +515,10 @@ def run():
             if now - last_claude >= 0.5:
                 c.sessions = read_sessions(now)
                 last_claude = now
+                # la liste est retriée (état, activité) : le curseur suit la même session
+                ids = [s.session_id for s in c.sessions]
+                if c.claude_sel_id in ids:
+                    c.claude_sel = ids.index(c.claude_sel_id)
                 if any(s.state in ("working", "waiting") for s in c.sessions):
                     c.claude_open = True  # Claude Code lancé autrement (WSL, ssh…)
                 states = {s.session_id: s.state for s in c.sessions}
@@ -755,6 +759,8 @@ def run():
             elif c.claude_sel >= c.scroll + CLAUDE_ROWS:
                 c.scroll = c.claude_sel - CLAUDE_ROWS + 1
             c.scroll = max(0, min(c.scroll, len(c.sessions) - CLAUDE_ROWS))
+            if c.sessions:
+                c.claude_sel_id = c.sessions[c.claude_sel].session_id or ""
             if page == "discord":
                 c.discord.mark_read()
             if page != "audio":
