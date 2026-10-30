@@ -132,7 +132,10 @@ class DeviceWatcher:
                     self._announce(self._resolve(ids))
                 except Exception:
                     pass
-            self._complete_battery()
+            try:
+                self._complete_battery()
+            except Exception:
+                pass
 
     @staticmethod
     def _resolve(ids):

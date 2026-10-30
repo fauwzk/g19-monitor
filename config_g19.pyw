@@ -22,10 +22,11 @@ from PIL import Image, ImageTk  # noqa: E402
 
 import install_hooks  # noqa: E402
 import install_startup  # noqa: E402
-from g19 import afterburner, backup, config, instance, night, remote, rtss, screen, settings, steam_live, theme, version  # noqa: E402
+from g19 import afterburner, backup, config, instance, night, remote, rtss, screen, settings, steam_live, theme, version, volume  # noqa: E402
 from g19 import discord as discord_rpc  # noqa: E402
 from g19.alerts import DEFAULT_THRESHOLDS, RULES  # noqa: E402
 from g19.launcher import launch  # noqa: E402
+from g19.fans import LABELS as FAN_LABELS  # noqa: E402
 from g19.weather import geocode  # noqa: E402
 from g19.claude_status import read_sessions  # noqa: E402
 from g19.render import THEME_LABELS, render, theme_of  # noqa: E402
@@ -64,6 +65,7 @@ PAGE_INFO = {
     "Météo et réseau": ("\uE909", "Ville de la météo et cible du ping de l'écran Réseau."),
     "Alertes et clavier": ("\uE7BA", "Seuils d'alerte et rétroéclairage du clavier comme voyant."),
     "Raccourcis": ("\uE71B", "Les applis à ouvrir depuis le menu du G19."),
+    "Audio": ("\uE7F5", "Profils audio : casque, haut-parleurs\u2026 \u00E0 changer d'un geste."),
     "Discord": ("\uE716", "Connexion à Discord : salon vocal, messages, appels."),
     "Steam": ("\uE7FC", "Téléchargements et amis en ligne."),
     "Système": ("\uE713", "L'appli, le démarrage, les ventilateurs et la sauvegarde."),
@@ -76,6 +78,10 @@ def icon_font():
         if name in families:
             return (name, 12)
     return None
+
+
+AUDIO_KEEP = "inchangé"
+AUDIO_KEEP_IN = "micro inchangé"
 
 
 class Sidebar(ttk.Frame):
@@ -185,6 +191,7 @@ class ConfigApp(tk.Tk):
         self._tab_weather(nb)
         self._tab_alerts(nb)
         self._tab_shortcuts(nb)
+        self._tab_audio(nb)
         self._tab_discord(nb)
         self._tab_steam(nb)
         self._tab_system(nb)
@@ -859,6 +866,154 @@ class ConfigApp(tk.Tk):
         if color:
             self._set_base(color.lower())
 
+    def _tab_audio(self, nb):
+        f = self._tab(nb, "Audio")
+        ttk.Label(f, wraplength=340, justify="left",
+                  text="Profils audio : passer d'un clic du casque aux haut-parleurs (sortie, "
+                       "micro et volume).").grid(row=0, column=0, columnspan=3, sticky="w")
+        self.ap_tree = ttk.Treeview(f, columns=("out", "vol"), show="tree headings", height=5,
+                                    selectmode="browse")
+        self.ap_tree.heading("#0", text="Profil")
+        self.ap_tree.heading("out", text="Sortie")
+        self.ap_tree.heading("vol", text="Volume")
+        self.ap_tree.column("#0", width=110)
+        self.ap_tree.column("out", width=180)
+        self.ap_tree.column("vol", width=60, anchor="e")
+        self.ap_tree.grid(row=1, column=0, columnspan=3, sticky="ew", pady=4)
+        self._audio_profiles = [dict(p) for p in self.s.get("audio_profiles") or []]
+        self._refresh_profiles()
+        self.ap_tree.bind("<<TreeviewSelect>>", self._on_profile)
+
+        self.ap_name, self.ap_out, self.ap_in = tk.StringVar(), tk.StringVar(), tk.StringVar()
+        self.ap_vol = tk.StringVar(value=AUDIO_KEEP)
+        self._devices = ([], [])
+        self.ap_out_box = ttk.Combobox(f, textvariable=self.ap_out, state="readonly", width=34)
+        self.ap_in_box = ttk.Combobox(f, textvariable=self.ap_in, state="readonly", width=34)
+        rows = (("Nom", ttk.Entry(f, textvariable=self.ap_name, width=20)),
+                ("Sortie", self.ap_out_box), ("Micro", self.ap_in_box),
+                ("Volume", ttk.Combobox(f, textvariable=self.ap_vol, width=10, values=[
+                    AUDIO_KEEP, *[str(v) for v in range(0, 101, 5)]])))
+        for i, (label, widget) in enumerate(rows):
+            ttk.Label(f, text=label).grid(row=2 + i, column=0, sticky="w", pady=2)
+            widget.grid(row=2 + i, column=1, columnspan=2, sticky="w")
+        btns = ttk.Frame(f)
+        btns.grid(row=6, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        for text, cmd in (("Ajouter", self._add_profile), ("Modifier", self._edit_profile),
+                          ("Supprimer", self._del_profile), ("▲", lambda: self._move_profile(-1)),
+                          ("▼", lambda: self._move_profile(1)),
+                          ("Appliquer", self._apply_profile),
+                          ("Actualiser", self._load_devices)):
+            ttk.Button(btns, text=text, command=cmd).pack(side="left", padx=(0, 4))
+        ttk.Label(f, style="Muted.TLabel", wraplength=340, justify="left",
+                  text="Changer de profil : sur l'écran Audio du G19, OK puis ◄ ► (ou OK, "
+                       "OK : profil suivant) · menu du G19 · clic droit sur l'icône G19 de la "
+                       "barre des tâches → Profil audio. Pense à « Enregistrer » en bas.").grid(
+            row=7, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        self._load_devices()
+
+    def _load_devices(self):
+        def work():
+            try:
+                devs = volume.list_devices()
+            except Exception:
+                devs = ([], [])
+            self.after(0, lambda: self._set_devices(devs))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _set_devices(self, devs):
+        self._devices = devs
+        self.ap_out_box.config(values=[n for _i, n in devs[0]])
+        self.ap_in_box.config(values=[AUDIO_KEEP_IN, *[n for _i, n in devs[1]]])
+        if not self.ap_in.get():
+            self.ap_in.set(AUDIO_KEEP_IN)
+
+    def _refresh_profiles(self, select=None):
+        self.ap_tree.delete(*self.ap_tree.get_children())
+        for i, p in enumerate(self._audio_profiles):
+            vol = "—" if p.get("volume") is None else f"{p['volume']} %"
+            self.ap_tree.insert("", "end", iid=str(i), text=p["name"],
+                                values=(p.get("out") or "—", vol))
+        if select is not None and 0 <= select < len(self._audio_profiles):
+            self.ap_tree.selection_set(str(select))
+
+    def _selected_profile(self):
+        sel = self.ap_tree.selection()
+        return int(sel[0]) if sel else None
+
+    def _on_profile(self, _event=None):
+        i = self._selected_profile()
+        if i is not None:
+            p = self._audio_profiles[i]
+            self.ap_name.set(p["name"])
+            self.ap_out.set(p.get("out") or "")
+            self.ap_in.set(p.get("in") or AUDIO_KEEP_IN)
+            self.ap_vol.set(AUDIO_KEEP if p.get("volume") is None else str(p["volume"]))
+
+    def _form_profile(self):
+        name, out = self.ap_name.get().strip(), self.ap_out.get().strip()
+        if not name or not out:
+            self._flash("Renseigne un nom et une sortie.")
+            return None
+        mic = self.ap_in.get().strip()
+        mic = "" if mic == AUDIO_KEEP_IN else mic
+        try:
+            vol = None if self.ap_vol.get().strip() in ("", AUDIO_KEEP) else \
+                max(0, min(100, int(self.ap_vol.get())))
+        except ValueError:
+            self._flash("Volume : un nombre de 0 à 100, ou « inchangé ».")
+            return None
+
+        def dev_id(devs, n):
+            return next((i for i, dn in devs if dn == n), "")
+
+        return {"name": name, "out": out, "out_id": dev_id(self._devices[0], out),
+                "in": mic, "in_id": dev_id(self._devices[1], mic) if mic else "", "volume": vol}
+
+    def _add_profile(self):
+        p = self._form_profile()
+        if p:
+            self._audio_profiles.append(p)
+            self._refresh_profiles(len(self._audio_profiles) - 1)
+
+    def _edit_profile(self):
+        i, p = self._selected_profile(), self._form_profile()
+        if i is not None and p:
+            self._audio_profiles[i] = p
+            self._refresh_profiles(i)
+
+    def _del_profile(self):
+        i = self._selected_profile()
+        if i is not None:
+            del self._audio_profiles[i]
+            self._refresh_profiles(min(i, len(self._audio_profiles) - 1))
+
+    def _move_profile(self, step):
+        i = self._selected_profile()
+        if i is not None and 0 <= i + step < len(self._audio_profiles):
+            s = self._audio_profiles
+            s[i], s[i + step] = s[i + step], s[i]
+            self._refresh_profiles(i + step)
+
+    def _apply_profile(self):
+        p = self._form_profile()
+        if not p:
+            return
+
+        def work():
+            try:
+                import comtypes
+                comtypes.CoInitialize()
+                try:
+                    ok, text = volume.apply_profile(p)
+                finally:
+                    comtypes.CoUninitialize()
+            except Exception as e:
+                text = str(e) or e.__class__.__name__
+            self.after(0, lambda: self._flash(f"Profil « {p['name']} » : {text}"))
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _tab_discord(self, nb):
         f = self._tab(nb, "Discord")
         steps = ("1. Crée une application sur le portail développeur Discord.\n"
@@ -943,7 +1098,6 @@ class ConfigApp(tk.Tk):
         box = ttk.LabelFrame(f, text="Ventilateurs carte mère (via LibreHardwareMonitor)",
                              padding=8)
         box.grid(row=5, column=0, sticky="ew", pady=(10, 0))
-        from g19.fans import LABELS as FAN_LABELS
         self._fan_ids = {v: k for k, v in FAN_LABELS.items()}
         self.fan_profile = tk.StringVar(value=FAN_LABELS.get(self.s["fan_profile"], "auto (GCC)"))
         ttk.Label(box, text="Profil").grid(row=0, column=0, sticky="w")
@@ -1073,6 +1227,7 @@ class ConfigApp(tk.Tk):
             "wallpaper_dim": self._int(self.wallpaper_dim, 60, 0, 90),
             "notif_ignore": [a.strip() for a in self.notif_ignore.get().split(",") if a.strip()],
             "shortcuts": self._shortcuts,
+            "audio_profiles": self._audio_profiles,
             "weather_city": self.city.get().strip(),
             "alerts_on": self.alerts_on.get(),
             "alerts": {k: self._int(v, DEFAULT_THRESHOLDS[k], 0, 120)

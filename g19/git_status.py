@@ -90,13 +90,16 @@ class GitStatus:
                     del self._repos[cwd]
                 todo = list(self._repos.items())
             for cwd, r in todo:
-                if now - r["git_at"] >= GIT_EVERY:
-                    r["git_at"] = now
-                    out = _run([GIT, "status", "--porcelain=v2", "--branch"], cwd)
-                    r["info"] = parse_status(out) if out is not None else None
-                if GH and r["info"] and now - r["gh_at"] >= GH_EVERY:
-                    r["gh_at"] = now
-                    r["pr"] = self._pr(cwd)
+                try:
+                    if now - r["git_at"] >= GIT_EVERY:
+                        r["git_at"] = now
+                        out = _run([GIT, "status", "--porcelain=v2", "--branch"], cwd)
+                        r["info"] = parse_status(out) if out is not None else None
+                    if GH and r["info"] and now - r["gh_at"] >= GH_EVERY:
+                        r["gh_at"] = now
+                        r["pr"] = self._pr(cwd)
+                except Exception:       # dépôt bizarre : on passe, le fil continue
+                    r["info"] = None
             self._wake.wait(3)
             self._wake.clear()
 

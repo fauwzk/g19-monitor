@@ -45,7 +45,10 @@ class Pinger:
         addr, resolved_for = None, None
         while True:
             start = time.time()
-            target = (self.target_fn() or "1.1.1.1").strip()
+            try:
+                target = (self.target_fn() or "1.1.1.1").strip()
+            except Exception:
+                target = resolved_for or "1.1.1.1"
             try:
                 if target != resolved_for:
                     ip = socket.gethostbyname(target)
@@ -57,7 +60,7 @@ class Pinger:
                 r = ICMP_ECHO_REPLY.from_buffer(reply)
                 self.samples.append(float(r.RoundTripTime) if n and r.Status == 0 else None)
                 self.status = ""
-            except OSError:
+            except (OSError, UnicodeError, ValueError):   # nom invalide (idna) compris
                 self.status = f"cible introuvable : {target}"
                 resolved_for = None
                 self.samples.append(None)

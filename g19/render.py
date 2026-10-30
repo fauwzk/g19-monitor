@@ -1819,7 +1819,8 @@ def page_audio(d, c, t):
                    anchor="mm")
         return
     c.audio_pick = c.audio_pick or {}
-    lines = mixer.rows(vol)
+    profs = mixer.profiles(c)
+    lines = mixer.rows(vol, profs)
     cur = c.audio_cursor
     sel = lines[cur] if cur is not None and cur < len(lines) else None
 
@@ -1831,9 +1832,32 @@ def page_audio(d, c, t):
             panel(d, (4, y0, W - 4, y1), 5, outline=None if _theme == "g19" else ACCENT,
                   color=dim(ACCENT, 0.35) if _theme == "g19" else PANEL)
 
+    # profils : une pastille par profil, celui en cours en couleur
+    off = 0
+    if profs:
+        off = 24
+        row = {"kind": "profile"}
+        highlight(28, 49, row)
+        d.text((12, 39), "PROFIL", font=font(9, True), fill=ACCENT, anchor="lm")
+        active = vol.active_profile(profs)
+        f = font(10, True)
+        x, right = 64, W - 12
+        if is_sel(row):
+            d.text((x, 39), "◄", font=font(10, True), fill=TEXT, anchor="lm")
+            d.text((right, 39), "►", font=font(10, True), fill=TEXT, anchor="rm")
+            x, right = x + 14, right - 14
+        room = (right - x - 4 * (len(profs) - 1)) // len(profs)
+        for k, p in enumerate(profs):
+            name = fit(d, p["name"], f, room - 10)
+            w = min(room, int(d.textlength(name, font=f)) + 14)
+            on = k == active
+            d.rounded_rectangle((x, 31, x + w, 47), 8, fill=ACCENT if on else TRACK)
+            d.text((x + w // 2, 39), name, font=f, fill=BG if on else MUTED, anchor="mm")
+            x += w + 4
+
     # périphériques : sortie puis entrée
     for k, (kind, label) in enumerate((("out", "SORTIE"), ("in", "ENTRÉE"))):
-        y = 28 + k * 24
+        y = 28 + off + k * 24
         row = {"kind": kind}
         highlight(y, y + 21, row)
         devs, current = mixer.devices(vol, kind)
@@ -1847,13 +1871,16 @@ def page_audio(d, c, t):
             d.text((W - 12, y + 11), "►", font=font(10, True), fill=TEXT, anchor="rm")
             x += 14
         right = W - 30 if is_sel(row) else W - 12
+        count = f"{i + 1}/{len(devs)}" if devs and len(devs) > 1 and not is_sel(row) else ""
+        if count:       # le nom s'arrête avant le compteur « 3/10 »
+            right -= int(d.textlength(count, font=font(9))) + 6
         if pending:
             right -= 64
             d.text((W - 28, y + 11), "OK appliquer", font=font(9, True), fill=WARN, anchor="rm")
         d.text((x, y + 11), fit(d, name, font(11, True), right - x), font=font(11, True),
                fill=WARN if pending else TEXT, anchor="lm")
-        if devs and len(devs) > 1 and not is_sel(row):
-            d.text((W - 12, y + 11), f"{i + 1}/{len(devs)}", font=font(9), fill=MUTED, anchor="rm")
+        if count:
+            d.text((W - 12, y + 11), count, font=font(9), fill=MUTED, anchor="rm")
 
     # volume général et micro
     def volume_line(y, row, icon, label, level, peak, muted, color):
@@ -1864,9 +1891,9 @@ def page_audio(d, c, t):
         d.text((W - 12, y + 11), "muet" if muted else f"{(level or 0) * 100:.0f}%",
                font=font(11, True), fill=HOT if muted else TEXT, anchor="rm")
 
-    volume_line(78, {"kind": "master"}, speaker_icon, "Général", vol.level, vol.peak, vol.muted,
-                ACCENT)
-    y = 102
+    volume_line(78 + off, {"kind": "master"}, speaker_icon, "Général", vol.level, vol.peak,
+                vol.muted, ACCENT)
+    y = 102 + off
     if vol.mic_level is not None:
         volume_line(y, {"kind": "mic"}, mic_icon, "Micro", vol.mic_level, vol.mic_peak,
                     vol.mic_muted, OK)
@@ -1877,12 +1904,13 @@ def page_audio(d, c, t):
     d.line((54, y + 8, W - 12, y + 8), fill=TRACK)
     apps = vol.sessions
     first_app = len(lines) - len(apps)
+    visible = AUDIO_APPS_VISIBLE - (1 if profs else 0)
     top = 0
     if sel and sel["kind"] == "app":
-        top = max(0, min(cur - first_app - AUDIO_APPS_VISIBLE + 1, len(apps) - AUDIO_APPS_VISIBLE))
+        top = max(0, min(cur - first_app - visible + 1, len(apps) - visible))
         top = min(top, cur - first_app)
     y += 16
-    for s in apps[top:top + AUDIO_APPS_VISIBLE]:
+    for s in apps[top:top + visible]:
         row = {"kind": "app", "key": s["key"]}
         highlight(y, y + 19, row)
         speaker_icon(d, 12, y + 10, s["muted"], dim(TEXT, 0.8) if not s["muted"] else HOT)
@@ -1891,13 +1919,21 @@ def page_audio(d, c, t):
         d.text((W - 12, y + 10), "muet" if s["muted"] else f"{s['volume'] * 100:.0f}%",
                font=font(10), fill=HOT if s["muted"] else MUTED, anchor="rm")
         y += 21
-    if len(apps) > AUDIO_APPS_VISIBLE:
-        d.text((W - 12, 236), f"{top + 1}-{top + min(AUDIO_APPS_VISIBLE, len(apps))}/{len(apps)}",
+    span = ""
+    if len(apps) > visible:
+        span = f"{top + 1}-{top + min(visible, len(apps))}/{len(apps)}"
+        d.text((W - 12, 236), span,
                font=font(9), fill=MUTED, anchor="rb")
 
-    hint = ("▲▼ ligne · ◄► régler · OK muet / appliquer · Annuler sortir" if cur is not None
-            else "OK régler · ▲▼ volume général")
-    d.text((10, 236), hint, font=font(9), fill=dim(MUTED, 0.85), anchor="lb")
+    if cur is not None and sel and sel["kind"] == "profile":
+        hint = "◄► / OK changer de profil · ▲▼ ligne · Annuler"
+    elif cur is not None:
+        hint = "▲▼ ligne · ◄► régler · OK muet / appliquer · Annuler"
+    else:
+        hint = "OK profils / réglages · ▲▼ volume général" if profs else             "OK régler · ▲▼ volume général"
+    room = W - 20 - (int(d.textlength(span, font=font(9))) + 8 if span else 0)
+    d.text((10, 236), fit(d, hint, font(9), room), font=font(9), fill=dim(MUTED, 0.85),
+           anchor="lb")
 
 
 def _luminance(r, g, b):

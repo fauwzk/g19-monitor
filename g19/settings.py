@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 import time
 
 from . import config
@@ -101,6 +102,7 @@ DEFAULTS = {
     "backlight_done": True,          # flash vert quand Claude a fini
     "backlight_discord": True,       # flash bleu à chaque message Discord
     "backlight_notifs": True,        # flash blanc à chaque notification Windows
+    "audio_profiles": [],         # [{"name", "out", "out_id", "in", "in_id", "volume"}]
     "shortcuts": DEFAULT_SHORTCUTS,  # applis à ouvrir depuis le menu du G19
     "blinks_done": 3,                # nombre de clignotements par type d'événement
     "blinks_discord": 3,
@@ -306,7 +308,13 @@ def load_state():
     return config.load("state.json", {}) or {}
 
 
+_state_lock = threading.Lock()
+
+
 def save_state(**kw):
-    state = load_state()
-    state.update(kw)
-    config.save("state.json", state)
+    # lire-modifier-écrire sous verrou : la boucle de l'écran et le fil des mises à jour
+    # écrivent tous deux dans state.json
+    with _state_lock:
+        state = load_state()
+        state.update(kw)
+        config.save("state.json", state)

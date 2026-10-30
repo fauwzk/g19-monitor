@@ -276,11 +276,11 @@ def backlight_state(c, cfg):
 _task_errors = {}
 
 
-def guarded(name, fn, *args):
+def guarded(name, fn, *args, **kw):
     """Lance une tâche périodique ; une exception est notée (une fois par 5 min et par tâche)
     au lieu de faire planter la boucle principale."""
     try:
-        return fn(*args)
+        return fn(*args, **kw)
     except Exception:
         now = time.time()
         if now - _task_errors.get(name, 0) > 300:
@@ -302,6 +302,14 @@ def launched_by_agent():
 
 
 BACK_AFTER_GAME = 5      # s après la fin de la partie (sans récapitulatif) avant de revenir
+
+
+def apply_audio_profile(c, i):
+    """Profil audio n° `i` des réglages (icône de la barre des tâches, menu du G19, utilitaire) ;
+    le bandeau arrive une fois appliqué par le fil audio."""
+    profs = mixer.profiles(c)
+    if 0 <= i < len(profs):
+        c.volume.do("profile", profs[i])
 
 
 def page_after_game(page, before, cfg, pages):
@@ -400,11 +408,14 @@ def run():
     if inst.already_running:
         log.info("déjà lancé, rien à faire")
         return 0
+    if guarded("gardien", instance.ensure_guard):   # relance l'appli si elle plante
+        log.info("gardien lancé")
     tray = Tray()
     lcd = connect_lcd(inst, tray)
     if not lcd:
         tray.stop()
         inst.release()
+        instance.stopped_on_purpose()     # quittée pendant l'attente de LGS
         return 0
     log.info("démarré (pid %d)", os.getpid())
     agent = launched_by_agent()
@@ -413,6 +424,7 @@ def run():
                     "de l'utilitaire ; relancer l'appli depuis Windows (start_g19.pyw)")
     agent_warned = 0.0
     lgs_checked_for = None      # lancement de LGS déjà vérifié (une fois par lancement)
+    last_guard_check = time.time()
     last_lgs_check = 0.0
     dog = Watchdog()           # couvre aussi le démarrage (écran, capteurs, ventilos)
 
@@ -427,7 +439,7 @@ def run():
     dog.fans = c.fans
     splash.step("média…", 0.8)
     media = MediaMonitor()
-    source_watcher = instance.SourceWatcher()
+    source_watcher = instance.SourceWatcher(background=True)
     keys, mirror = remote.KeyInbox(), remote.Mirror()  # clavier virtuel de l'utilitaire
     page = start_page(c.settings)
     shown_page = page
@@ -479,12 +491,17 @@ def run():
                     last_lgs_check = now
                     lgs_checked_for = guarded("LGS", check_lgs_lighting, c, now, lgs_checked_for) \
                         or lgs_checked_for
+                if now - last_guard_check >= 60:   # gardien arrêté entre-temps : relancé
+                    last_guard_check = now
+                    guarded("gardien", instance.ensure_guard)
                 if agent and now - agent_warned >= AGENT_WARN_EVERY:
                     agent_warned = now
                     c.agent_event = ("Lancée par un agent Claude",
                                      "réglages isolés : quitte-la et relance start_g19.pyw", now)
+                profs = mixer.profiles(c)
                 guarded("zone de notification", lambda: tray.update(
-                    page, visible_pages(c, cfg), c.sessions, tooltip(c, page), c.discord.unread))
+                    page, visible_pages(c, cfg), c.sessions, tooltip(c, page), c.discord.unread,
+                    [p["name"] for p in profs], c.volume.active_profile(profs)))
                 last_sample = now
             if now - last_proc >= 5:
                 c.claude_open = claude_running()
@@ -508,6 +525,8 @@ def run():
                     if settings.last_change_by().startswith("config_g19"):
                         c.saved_event = ("Paramètres enregistrés", "depuis l'utilitaire", now)
                 req = config.load(TEST_FILE)
+                if not isinstance(req, dict):   # fichier abîmé ou d'un autre format
+                    req = None
                 if req and req.get("at", 0) > last_test and req.get("kind") == "update":
                     last_test = req["at"]
                     c.updater.check_now()
@@ -541,6 +560,8 @@ def run():
                     if "speedtest" in cfg["pages"]:
                         page = "speedtest"
                     c.speedtest.start()
+                elif cmd[0] == "audio_profile":
+                    apply_audio_profile(c, cmd[1])
                 elif cmd[0] == "restart":
                     restart = True
                 elif cmd[0] == "quit":
@@ -614,6 +635,7 @@ def run():
                     elif res and res[0] == "settings":
                         c.media = media.state
                         menu.update_status = c.updater.status if c.updater else ""
+                        menu.audio_active = c.volume.active_profile(mixer.profiles(c))
                         menu.show(cfg, page_action(page, c))
                     continue
                 if fan_panel is not None:
@@ -622,9 +644,9 @@ def run():
                         fan_panel = (fan_panel - 1) % len(ids)
                     elif b in ("right", "down"):
                         fan_panel = (fan_panel + 1) % len(ids)
-                    elif b == "ok":
-                        settings.save_changes({"fan_profile": ids[fan_panel]})
-                        c.settings = cfg = settings.load()
+                    elif b == "ok" and (saved := guarded("ventilateurs", settings.save_changes,
+                                                         {"fan_profile": ids[fan_panel]})):
+                        c.settings = cfg = saved
                         watch.poll()
                     elif b in ("cancel", "menu"):
                         fan_panel = None
@@ -639,14 +661,18 @@ def run():
                     cover.show(pages, page)     # Menu : coverflow des écrans + paramètres
                     continue
                 if menu.open:
-                    new, cmd = menu.handle(b, cfg)
+                    # réglages illisibles un instant (écriture en cours ailleurs) : la
+                    # touche est perdue, pas l'appli
+                    new, cmd = guarded("menu", menu.handle, b, cfg) or (None, None)
                     if new:
-                        c.settings = cfg = settings.load()
+                        c.settings = cfg = new      # réglages tels qu'enregistrés
                         watch.poll()
                     if cmd == "config":
                         open_config()
                     elif cmd == "restart":
                         restart = True
+                    elif cmd and cmd[0] == "audio_profile":
+                        apply_audio_profile(c, cmd[1])
                     elif cmd and cmd[0] == "update":
                         c.updater.check_now()
                         c.saved_event = ("Mises à jour", "vérification sur GitHub…", time.time())
@@ -694,7 +720,7 @@ def run():
                     views = GPU_VIEWS
                     c.gpu_view = views[(views.index(c.gpu_view) + 1) % len(views)] \
                         if c.gpu_view in views else views[0]
-                    settings.save_state(gpu_view=c.gpu_view)
+                    guarded("état", settings.save_state, gpu_view=c.gpu_view)
                 elif page == "screen" and b == "ok":
                     c.mirror.next_screen()
                 elif page == "screen" and b in ("up", "down"):
@@ -725,7 +751,7 @@ def run():
                 c.audio_cursor = None
             if page != shown_page:
                 shown_page = page
-                settings.save_state(page=page)
+                guarded("état", settings.save_state, page=page)
 
             # flash bleu / blanc à l'arrivée d'un message Discord / d'une notification Windows
             if c.discord.last_notification > last_discord:
@@ -757,6 +783,10 @@ def run():
                 changes.append(c.volume.changes.get_nowait())
             if changes and cfg.get("device_toasts", True):
                 c.devices.audio(changes)       # casque / enceintes / micro branchés ou retirés
+            while not c.volume.profile_events.empty():
+                name, ok, text = c.volume.profile_events.get_nowait()
+                (log.info if ok else log.warning)("profil audio « %s » : %s", name, text)
+                c.saved_event = (f"Profil audio · {name}", text, now)
             c.media = media.state
             try:
                 if cover.open:
@@ -815,7 +845,13 @@ def run():
                 log.exception("fermeture : %s", getattr(step, "__qualname__", step))
         if not crashed:
             inst.release()
-    if crashed:
+            if not restart:
+                instance.stopped_on_purpose()   # quittée exprès : le gardien s'arrête aussi
+    if crashed and instance.guard_running():
+        # le gardien relance (aussitôt si le code est corrigé, sinon de plus en plus espacé)
+        log.info("plantage : le gardien relancera l'appli")
+        inst.release()
+    elif crashed:
         # code tout juste modifié et cassé à l'exécution : on attend sa correction pour relancer
         # au lieu de laisser l'écran éteint
         log.info("en attente d'une correction du code pour relancer")
@@ -859,6 +895,9 @@ def main():
             instance.spawn()
             print("relancé" if was_running else "lancé")
         else:
+            end = time.time() + 8   # le gardien part avec l'appli (désinstallation : dossier libre)
+            while instance.guard_running() and time.time() < end:
+                time.sleep(0.2)
             print("arrêté" if was_running else "n'était pas lancé")
     else:
         return run()

@@ -8,7 +8,7 @@ import pystray
 from PIL import Image, ImageDraw
 
 from . import instance
-from .render import ACCENT, BG, CLAUDE, DISCORD, GPU_C, OK, PANEL, RAM_C, STATE_COLOR, TRACK
+from .render import ACCENT, BG, CLAUDE, DISCORD, GPU_C, PANEL, RAM_C, STATE_COLOR, TRACK
 from .settings import PAGE_TITLES
 
 SIZE = 64
@@ -40,12 +40,15 @@ def open_config():
 
 
 class Tray:
-    """Les clics du menu arrivent dans `commands` : ("page", id), ("restart",), ("quit",)."""
+    """Les clics du menu arrivent dans `commands` : ("page", id), ("audio_profile", n),
+    ("speedtest",), ("restart",), ("quit",)."""
 
     def __init__(self):
         self.commands = queue.Queue()
         self.pages = list(PAGE_TITLES)
         self.page = None
+        self.profiles = []          # noms des profils audio
+        self.profile = None         # indice du profil en cours
         self._key = None
         self.icon = pystray.Icon("G19Monitor", make_icon(), "G19 Monitor", self._menu())
         self.icon.run_detached()
@@ -55,10 +58,18 @@ class Tray:
             return pystray.MenuItem(PAGE_TITLES[pid], lambda: self.commands.put(("page", pid)),
                                     checked=lambda _: self.page == pid, radio=True)
 
+        def profile_item(i, name):
+            return pystray.MenuItem(name, lambda: self.commands.put(("audio_profile", i)),
+                                    checked=lambda _: self.profile == i, radio=True)
+
         return pystray.Menu(
             pystray.MenuItem("Configuration…", lambda: open_config(), default=True),
             pystray.MenuItem("Afficher sur le G19",
                              pystray.Menu(lambda: (page_item(p) for p in self.pages))),
+            pystray.MenuItem("Profil audio",
+                             pystray.Menu(lambda: (profile_item(i, n)
+                                                   for i, n in enumerate(self.profiles))),
+                             visible=lambda _: bool(self.profiles)),
             pystray.MenuItem("Lancer un test de débit", lambda: self.commands.put(("speedtest",))),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Journal", lambda: _open(instance.APP_DIR / "g19.log")),
@@ -66,10 +77,11 @@ class Tray:
             pystray.MenuItem("Quitter", lambda: self.commands.put(("quit",))),
         )
 
-    def update(self, page, pages, sessions, tooltip, unread=False):
+    def update(self, page, pages, sessions, tooltip, unread=False, profiles=(), profile=None):
         self.page = page
-        if pages != self.pages:
-            self.pages = list(pages)
+        self.profile = profile
+        if pages != self.pages or list(profiles) != self.profiles:
+            self.pages, self.profiles = list(pages), list(profiles)
             self.icon.update_menu()
         state = sessions[0].state if sessions else None
         key = (state, bool(unread))

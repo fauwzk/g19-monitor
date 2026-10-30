@@ -1,16 +1,34 @@
-"""Écran Audio : lignes réglables (sortie, entrée, volume général, micro, applis) et touches.
+"""Écran Audio : lignes réglables (profils, sortie, entrée, volume général, micro, applis) et
+touches.
 
-Hors réglage, ▲ ▼ montent / baissent le volume général et OK entre en réglage. En réglage,
-▲ ▼ choisissent la ligne, ◄ ► règlent (ou parcourent les périphériques), OK coupe le son ou
-applique le périphérique choisi, Annuler / Menu sortent."""
+Hors réglage, ▲ ▼ montent / baissent le volume général et OK entre en réglage (sur la ligne des
+profils s'il y en a). En réglage, ▲ ▼ choisissent la ligne, ◄ ► règlent (ou parcourent les
+périphériques ; sur les profils : passent aussitôt au précédent / suivant), OK coupe le son,
+applique le périphérique choisi ou passe au profil suivant, Annuler / Menu sortent."""
 from .volume import STEP
 
 
-def rows(vol):
+def profiles(c):
+    return [p for p in (c.settings or {}).get("audio_profiles") or () if p.get("name")]
+
+
+def next_profile(c, step=1):
+    """Profil après (ou avant) celui en cours ; le premier si aucun ne correspond."""
+    profs = profiles(c)
+    if not profs:
+        return None
+    cur = c.volume.active_profile(profs) if c.volume else None
+    if cur is None:
+        return profs[0] if step > 0 else profs[-1]
+    return profs[(cur + step) % len(profs)]
+
+
+def rows(vol, profs=()):
     """Lignes de l'écran, dans l'ordre : [{"kind", ...}]."""
     if not vol:
         return []
-    out = [{"kind": "out"}, {"kind": "in"}, {"kind": "master"}]
+    out = [{"kind": "profile"}] if profs else []
+    out += [{"kind": "out"}, {"kind": "in"}, {"kind": "master"}]
     if vol.mic_level is not None:
         out.append({"kind": "mic"})
     out += [{"kind": "app", "key": s["key"]} for s in vol.sessions]
@@ -35,15 +53,17 @@ def handle(c, b):
     vol = c.volume
     if not vol:
         return False
+    profs = profiles(c)
     if c.audio_cursor is None:
         if b == "ok":
-            c.audio_cursor, c.audio_pick = 2, {}   # curseur sur le volume général
+            # curseur sur les profils s'il y en a (OK, OK : profil suivant), sinon sur le volume
+            c.audio_cursor, c.audio_pick = (0 if profs else 2), {}
             return True
         if b in ("up", "down"):
             vol.do("master", STEP if b == "up" else -STEP)
             return True
         return False
-    lines = rows(vol)
+    lines = rows(vol, profs)
     if not lines:
         c.audio_cursor = None
         return True
@@ -55,6 +75,10 @@ def handle(c, b):
     elif b in ("up", "down"):
         c.audio_cursor = (i + (1 if b == "down" else -1)) % len(lines)
         c.audio_pick = {}
+    elif kind == "profile" and b in ("left", "right", "ok"):
+        p = next_profile(c, -1 if b == "left" else 1)
+        if p:
+            vol.do("profile", p)
     elif b in ("left", "right"):
         step = 1 if b == "right" else -1
         if kind in ("out", "in"):

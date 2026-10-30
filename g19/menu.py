@@ -117,6 +117,7 @@ class SettingsMenu:
         self.index = self.top = 0
         self.real_fps = None
         self.update_status = ""  # dernière vérification des mises à jour (affichée en tête)
+        self.audio_active = None  # profil audio en cours (indice), affiché « actif »
 
     def show(self, cfg, page_action=None):
         """Ouvre le menu ; `page_action` = (libellé, cible, args) lié à la page affichée."""
@@ -130,7 +131,10 @@ class SettingsMenu:
                 launch.append((None, sc["name"], "launch", (sc["target"], sc.get("args", ""))))
         head = [(None, f"G19 Monitor · {version.label(short=True)}", "title", None),
                 ("update_check", "Vérifier les mises à jour", "action", ("update",))]
-        self.items = (head + THEME_ITEMS
+        profiles = [(None, "Audio", "title", None)] + [
+            (f"audio_profile_{i}", f"Profil · {p['name']}", "action", ("audio_profile", i))
+            for i, p in enumerate(cfg.get("audio_profiles") or []) if p.get("name")]
+        self.items = (head + THEME_ITEMS + (profiles if len(profiles) > 1 else [])
                       + ([(None, "Ouvrir", "title", None)] + launch if launch else [])
                       + SETTINGS_ITEMS)
         self.selectable = [i for i, it in enumerate(self.items) if it[2] != "title"]
@@ -153,6 +157,8 @@ class SettingsMenu:
         if key == "update_check" and self.update_status:
             # « à jour (10:31) », « mise à jour disponible (2 changements)… » : court
             return self.update_status if len(self.update_status) <= 24                 else self.update_status.split(" (")[0][:24]
+        if kind == "action" and opts[0] == "audio_profile":
+            return "actif" if opts[1] == self.audio_active else "›"
         return "›" if kind in ("action", "launch") else ""
 
     def handle(self, button, cfg):

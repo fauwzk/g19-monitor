@@ -1,7 +1,6 @@
 """Réglages de l'écran du G19 appliqués à chaque image avant l'envoi : luminosité, contraste,
 gamma (relève les tons sombres, que le LCD écrase), saturation, netteté. Et une mire pour les
 régler à l'œil directement sur le clavier."""
-import time
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 

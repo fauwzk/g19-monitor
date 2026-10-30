@@ -56,6 +56,104 @@ def _short(name):
     return name
 
 
+# --- profils audio : {"name", "out", "out_id", "in", "in_id", "volume"} ---
+# Un périphérique est retrouvé par son identifiant Windows, sinon par son nom (l'identifiant
+# change si le casque est réinstallé ou branché sur un autre port USB) ; "in" vide : entrée
+# inchangée ; "volume" None : volume inchangé.
+
+def _find(devs, dev_id, name):
+    """Identifiant du périphérique du profil parmi `devs` [(id, nom)], None s'il est absent."""
+    if dev_id and any(d[0] == dev_id for d in devs):
+        return dev_id
+    name = (name or "").casefold()
+    if not name:
+        return None
+    for i, n in devs:
+        if n.casefold() == name:
+            return i
+    for i, n in devs:            # nom raccourci différemment d'une version à l'autre
+        if name in n.casefold() or n.casefold() in name:
+            return i
+    return None
+
+
+def active_profile(profiles, outputs, out_id, inputs, in_id):
+    """Indice du profil qui correspond aux périphériques par défaut actuels, None sinon."""
+    for k, p in enumerate(profiles or ()):
+        if not p.get("out") and not p.get("out_id"):
+            continue
+        if _find(outputs, p.get("out_id"), p.get("out")) != out_id or out_id is None:
+            continue
+        if (p.get("in") or p.get("in_id")) and                 _find(inputs, p.get("in_id"), p.get("in")) != in_id:
+            continue
+        return k
+    return None
+
+
+def _endpoints(flow):
+    """[(id, nom court)] des périphériques actifs et l'id de celui par défaut (thread COM)."""
+    enum = AudioUtilities.GetDeviceEnumerator()
+    coll = enum.EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE)
+    out = []
+    for i in range(coll.GetCount()):
+        dev = AudioUtilities.CreateDevice(coll.Item(i))
+        out.append((dev.id, _short(dev.FriendlyName)))
+    out.sort(key=lambda d: d[1].lower())
+    try:
+        default = enum.GetDefaultAudioEndpoint(flow, ERole.eMultimedia.value).GetId()
+    except Exception:
+        default = None
+    return out, default
+
+
+
+def _set_default(dev_id):
+    AudioUtilities.SetDefaultDevice(dev_id, [ERole.eConsole, ERole.eMultimedia,
+                                             ERole.eCommunications])
+
+
+def apply_profile(p):
+    """Applique un profil depuis le thread courant (COM initialisé). Renvoie le texte du
+    bandeau : « Casque · Logitech G Pro » ou ce qui manque (« sortie introuvable »)."""
+    outputs, _ = _endpoints(RENDER)
+    inputs, _ = _endpoints(CAPTURE)
+    missing = []
+    out = _find(outputs, p.get("out_id"), p.get("out"))
+    if out:
+        _set_default(out)
+        vol = p.get("volume")
+        if vol is not None:
+            enum = AudioUtilities.GetDeviceEnumerator()
+            ev = AudioUtilities.CreateDevice(enum.GetDevice(out)).EndpointVolume
+            ev.SetMasterVolumeLevelScalar(_unit(int(vol) / 100), None)
+            if int(vol) > 0:
+                ev.SetMute(0, None)
+    elif p.get("out") or p.get("out_id"):
+        missing.append("sortie")
+    if p.get("in") or p.get("in_id"):
+        mic = _find(inputs, p.get("in_id"), p.get("in"))
+        if mic:
+            _set_default(mic)
+        else:
+            missing.append("micro")
+    if missing:
+        return False, " et ".join(missing) + " introuvable" + ("s" if len(missing) > 1 else "")
+    name = dict(outputs).get(out, p.get("out") or "")
+    return True, name.split(" · ")[0] if name else "appliqué"
+
+
+def list_devices():
+    """(sorties, entrées) actives [(id, nom court)], pour l'utilitaire (appel bloquant, à
+    faire hors du fil de l'interface)."""
+    if not AudioUtilities:
+        return [], []
+    comtypes.CoInitialize()
+    try:
+        return _endpoints(RENDER)[0], _endpoints(CAPTURE)[0]
+    finally:
+        comtypes.CoUninitialize()
+
+
 class VolumeMonitor:
     def __init__(self):
         self.device = ""
@@ -72,6 +170,7 @@ class VolumeMonitor:
         self.sessions = []       # [{"key", "name", "system", "volume", "muted", "peak"}] par appli
         self.error = ""
         self.changes = queue.Queue()   # (nom, "out"|"in", connecté ?) : périphériques audio
+        self.profile_events = queue.Queue()   # (nom du profil, réussi ?, texte) après un profil
         self._known = None             # {id: (nom, sens)} au dernier passage (None : premier)
         self._cmds = queue.Queue()
         self._live = {}          # nom d'appli → [sessions COM] (dans le thread audio)
@@ -85,8 +184,9 @@ class VolumeMonitor:
         return None
 
     def do(self, *cmd):
-        """Commande pour le thread audio : ("default", id), ("master", ±pas), ("master_mute",),
-        ("mic", ±pas), ("mic_mute",), ("app", nom, ±pas), ("app_mute", nom)."""
+        """Commande pour le thread audio : ("default", id), ("profile", profil), ("master",
+        ±pas), ("master_mute",), ("mic", ±pas), ("mic_mute",), ("app", nom, ±pas),
+        ("app_mute", nom)."""
         self._cmds.put(cmd)
 
     # --- thread audio ---
@@ -114,19 +214,8 @@ class VolumeMonitor:
                 time.sleep(2)
             time.sleep(0.08)
 
-    def _endpoints(self, flow):
-        enum = AudioUtilities.GetDeviceEnumerator()
-        coll = enum.EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE)
-        out = []
-        for i in range(coll.GetCount()):
-            dev = AudioUtilities.CreateDevice(coll.Item(i))
-            out.append((dev.id, _short(dev.FriendlyName)))
-        out.sort(key=lambda d: d[1].lower())
-        try:
-            default = enum.GetDefaultAudioEndpoint(flow, ERole.eMultimedia.value).GetId()
-        except Exception:
-            default = None
-        return out, default
+    def active_profile(self, profiles):
+        return active_profile(profiles, self.outputs, self.out_id, self.inputs, self.in_id)
 
     @staticmethod
     def _meter(imm):
@@ -134,8 +223,8 @@ class VolumeMonitor:
             .QueryInterface(IAudioMeterInformation)
 
     def _refresh(self):
-        self.outputs, self.out_id = self._endpoints(RENDER)
-        self.inputs, self.in_id = self._endpoints(CAPTURE)
+        self.outputs, self.out_id = _endpoints(RENDER)
+        self.inputs, self.in_id = _endpoints(CAPTURE)
         # périphériques audio apparus / disparus depuis le passage précédent
         now = {i: (n, "out") for i, n in self.outputs}
         now.update({i: (n, "in") for i, n in self.inputs})
@@ -200,8 +289,13 @@ class VolumeMonitor:
     def _apply(self, cmd):
         kind, *args = cmd
         if kind == "default":
-            AudioUtilities.SetDefaultDevice(args[0], [ERole.eConsole, ERole.eMultimedia,
-                                                      ERole.eCommunications])
+            _set_default(args[0])
+        elif kind == "profile":
+            try:
+                ok, text = apply_profile(args[0])
+            except Exception as e:
+                ok, text = False, str(e) or e.__class__.__name__
+            self.profile_events.put((args[0].get("name") or "?", ok, text))
         elif kind in ("master", "master_mute"):
             ev = AudioUtilities.GetSpeakers().EndpointVolume
             self._change(ev.GetMasterVolumeLevelScalar, ev.SetMasterVolumeLevelScalar,

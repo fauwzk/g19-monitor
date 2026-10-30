@@ -65,7 +65,10 @@ class Updater:
                 except Exception as e:      # réseau coupé, git absent… on réessaiera
                     self.status = f"erreur : {e.__class__.__name__}"
                 # l'utilitaire affiche le résultat de la dernière vérification
-                settings.save_state(update_status={"text": self.status, "at": time.time()})
+                try:
+                    settings.save_state(update_status={"text": self.status, "at": time.time()})
+                except Exception:
+                    pass
             self._wake.wait(CHECK_EVERY)
 
     def _check(self, manual=False):

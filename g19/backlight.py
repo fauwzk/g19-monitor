@@ -134,6 +134,9 @@ class Backlight:
                 self._apply(self._wanted())
             except OSError:
                 self._active = False
+            except Exception:       # jamais de fil mort : le clavier ne changerait plus
+                self._active = False
+                self._warn("run", "rétroéclairage : erreur inattendue", exc_info=True)
             self._stop.wait(TICK)
 
     def _load(self):
@@ -173,11 +176,11 @@ class Backlight:
         log.info("rétroéclairage : connecté au SDK LED")
         return True
 
-    def _warn(self, what, msg, *args):
+    def _warn(self, what, msg, *args, exc_info=False):
         now = time.time()
         if now - self._warned.get(what, 0) >= WARN_EVERY:
             self._warned[what] = now
-            log.warning(msg, *args)
+            log.warning(msg, *args, exc_info=exc_info)
 
     def _check(self, ok, what):
         """Une commande refusée par LGS (éclairage pris par une autre appli…) : notée."""

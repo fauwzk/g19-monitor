@@ -9,7 +9,6 @@ import io
 import json
 import msvcrt
 import queue
-import re
 import struct
 import threading
 import time

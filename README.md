@@ -147,7 +147,7 @@ dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilit
 | **Jeux** | En jeu : pochette, launcher, durée, temps du jour et total, FPS, températures max, courbe des FPS. Sinon : derniers jeux. Au lancement d'un jeu, le G19 passe sur la page choisie (GPU par défaut) ; à sa fermeture, le récapitulatif s'affiche aussitôt, puis le G19 revient à la page d'avant la partie (sauf si on a changé de page pendant) | |
 | **Steam** | Téléchargements et mises à jour en cours (progression et vitesse en direct d'après `steamapps\downloading`, tailles d'après les manifestes et `logs\content_log.txt`) ; amis en ligne et leur jeu (clé d'API Web Steam dans l'utilitaire) | ▲ ▼ défiler · OK liste d'amis |
 | **Média** | Pochette, titre, artiste, progression, volume + vumètre, accent tiré de la pochette ; paroles synchronisées (LRCLIB) | ▲ préc. · OK paroles · ▼ suiv. |
-| **Audio** | Sortie et entrée par défaut de Windows, volume général et micro avec vumètres, volume de chaque appli, appliqués au système | ▲ ▼ volume · OK régler · ◄ ► valeur |
+| **Audio** | Sortie et entrée par défaut de Windows, volume général et micro avec vumètres, volume de chaque appli, appliqués au système ; **profils** (casque, haut-parleurs… : sortie, micro et volume d'un coup), aussi depuis le menu du G19 et l'icône de la barre des tâches | ▲ ▼ volume · OK régler · ◄ ► valeur / profil |
 | **Discord** | Salon vocal (qui parle, qui est muet), état du micro, derniers messages ; casque et micro dans le bandeau du haut tant que Discord est ouvert | OK muet · ▲ sourdine |
 | **Claude** | Sessions Claude Code avec leur contexte, l'état git de leur dossier (branche, fichiers modifiés, commits à pousser / tirer, PR et CI via `gh`), usage du bloc de 5 h et des 7 jours | ▲ ▼ choisir · OK aller à la session |
 | **Notifs** | Notifications Windows de toutes les applis | OK effacer |
@@ -192,6 +192,8 @@ terminés, agents Claude qui ont fini…
 mire de réglage, jusqu'à 60 images/s.
 
 **Fiabilité.** Chien de garde (boucle figée : piles notées, ventilateurs en auto, relance),
+gardien à part qui relance l'appli si elle plante ou disparaît (attente de plus en plus longue
+si elle replante, aussitôt si le code est corrigé ; il s'arrête quand on quitte l'appli),
 tâche en erreur sautée sans arrêter l'appli, relance automatique quand le code change (un code
 cassé est refusé), réglages enregistrés champ par champ avec copie de secours et journal
 (`settings_changes.log`).

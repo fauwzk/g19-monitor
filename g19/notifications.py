@@ -8,7 +8,7 @@ import threading
 import time
 from collections import deque
 
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageOps
 
 try:
     from winrt.windows.foundation import Size

@@ -1,7 +1,9 @@
 """Instance unique, arrêt à distance et relance de l'appli."""
 import ctypes
+import os
 import subprocess
 import sys
+import threading
 import time
 from ctypes import wintypes
 from pathlib import Path
@@ -10,6 +12,8 @@ APP_DIR = Path(__file__).resolve().parent.parent
 MAIN = APP_DIR / "g19_monitor.py"
 MUTEX = "Local\\G19PCMonitor"
 QUIT_EVENT = "Local\\G19PCMonitorQuit"
+GUARD_MUTEX = "Local\\G19PCMonitorGuard"         # gardien qui relance l'appli si elle plante
+GUARD_STOP = "Local\\G19PCMonitorGuardStop"      # posé par l'appli quand on la quitte exprès
 
 ERROR_ALREADY_EXISTS = 183
 SYNCHRONIZE = 0x00100000
@@ -48,11 +52,33 @@ class SingleInstance:
         self.event = self.mutex = None
 
 
-def is_running():
-    h = _k32.OpenMutexW(SYNCHRONIZE, False, MUTEX)
+def is_running(name=MUTEX):
+    h = _k32.OpenMutexW(SYNCHRONIZE, False, name)
     if h:
         _k32.CloseHandle(h)
     return bool(h)
+
+
+def guard_running():
+    return is_running(GUARD_MUTEX)
+
+
+def ensure_guard():
+    """Lance le gardien (g19/guard.py) s'il ne tourne pas : il relance l'appli si elle
+    disparaît sans qu'on l'ait quittée (plantage d'un pilote, processus tué…)."""
+    if guard_running() or os.environ.get("G19_NO_GUARD"):
+        return False
+    _popen(["-m", "g19.guard"])
+    return True
+
+
+def stopped_on_purpose():
+    """L'appli s'arrête parce qu'on l'a quittée (icône, utilitaire, --stop) : le gardien ne
+    doit pas la relancer, il s'arrête aussi."""
+    h = _k32.OpenEventW(EVENT_MODIFY_STATE, False, GUARD_STOP)
+    if h:
+        _k32.SetEvent(h)
+        _k32.CloseHandle(h)
 
 
 def stop(timeout=10):
@@ -79,30 +105,65 @@ def wait_exit(pid, timeout=15):
 def spawn(args=(), wait_pid=None):
     """Lance l'appli en arrière-plan, sans console ; `wait_pid` : la nouvelle instance attend
     d'abord la fin de ce processus."""
-    import os
     env = {**os.environ, "G19_WAIT_PID": str(wait_pid)} if wait_pid else None
+    _popen([str(MAIN), *args], env)
+
+
+def _popen(args, env=None):
     exe = Path(sys.executable)
     pythonw = exe.with_name("pythonw.exe")
     flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    subprocess.Popen([str(pythonw if pythonw.exists() else exe), str(MAIN), *args],
+    subprocess.Popen([str(pythonw if pythonw.exists() else exe), *args],
                      cwd=APP_DIR, creationflags=flags, close_fds=True, env=env,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class SourceWatcher:
-    """Détecte une modification du code de l'appli (g19_monitor.py et g19/*.py)."""
+    """Détecte une modification du code de l'appli (g19_monitor.py et g19/*.py).
 
-    def __init__(self):
+    `background` : les fichiers sont relus dans un fil à part, chaque seconde ; un disque qui
+    tarde à répondre (mise en veille, antivirus) ne fige plus la boucle de l'écran."""
+
+    def __init__(self, background=False):
         self.mtimes = self._scan()
+        self._pending = set()
+        self._lock = threading.Lock()
+        if background:
+            threading.Thread(target=self._run, daemon=True, name="sources").start()
+        self.background = background
 
     @staticmethod
     def _scan():
         files = [MAIN, *sorted((APP_DIR / "g19").glob("*.py"))]
-        return {p: p.stat().st_mtime for p in files if p.exists()}
+        out = {}
+        for p in files:
+            try:
+                out[p] = p.stat().st_mtime
+            except OSError:
+                pass        # supprimé entre-temps (mise à jour, changement de branche)
+        return out
+
+    def _diff(self):
+        now = self._scan()
+        changed = {p for p in now.keys() | self.mtimes.keys() if self.mtimes.get(p) != now.get(p)}
+        self.mtimes = now
+        return changed
+
+    def _run(self):
+        while True:
+            time.sleep(1)
+            try:
+                changed = self._diff()
+            except Exception:
+                continue
+            if changed:
+                with self._lock:
+                    self._pending |= changed
 
     def changed(self):
         """Fichiers modifiés depuis le dernier appel (vide si rien)."""
-        now = self._scan()
-        changed = [p for p, m in now.items() if self.mtimes.get(p) != m]
-        self.mtimes = now
-        return changed
+        if not self.background:
+            return sorted(self._diff())
+        with self._lock:
+            out, self._pending = sorted(self._pending), set()
+        return out
