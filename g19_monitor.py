@@ -328,7 +328,7 @@ def load_toast_log():
 
 
 def follow_play_pause(c, last, now):
-    """Lecture / pause du même morceau → fenêtre sur le G19 (c.media_toggle). Renvoie l'état à
+    """Lecture / pause du même morceau → bandeau sur le G19 (c.media_toggle). Renvoie l'état à
     comparer au tour suivant : (titre, artiste, en lecture ?)."""
     m = c.media
     if not m or not (m.title or m.artist):
@@ -578,7 +578,7 @@ def run():
     shown_page = page
     last_sample = last_claude = last_watch = last_fps = last_proc = 0.0
     frames, fps_window = 0, time.time()
-    last_play = None            # (titre, artiste, en lecture ?) pour la fenêtre lecture / pause
+    last_play = None            # (titre, artiste, en lecture ?) pour le bandeau lecture / pause
     last_lcd = 0.0              # dernière image envoyée au G19
     game = None
     reload_at = None

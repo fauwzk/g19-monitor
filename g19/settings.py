@@ -73,6 +73,7 @@ DEFAULTS = {
     "toast_seconds": 6,
     "win_toasts": True,              # bandeau pour les notifications Windows
     "media_toasts": True,            # bandeau au changement de musique / média
+    "pause_toasts": True,            # bandeau quand la musique est mise en pause ou reprend
     "device_toasts": True,           # bandeau à la connexion d'un périphérique
     "voice_toasts": True,            # bandeau quand quelqu'un rejoint / quitte l'appel Discord
     "steam_toasts": True,            # bandeau quand un ami Steam se connecte ou lance un jeu
@@ -82,8 +83,7 @@ DEFAULTS = {
     "screen_list_style": "coverflow",  # touche Menu : coverflow, flat, grid, list
     "screen_dither": True,           # tramage : dégradés sans bandes sur l'écran 16 bits
     "volume_popup": True,            # fenêtre de volume sur le G19 quand le son change
-    "mic_popup": True,
-    "media_popup": True,             # fenêtre sur le G19 quand la musique passe en lecture / pause               # fenêtre sur le G19 quand le micro est coupé / rétabli
+    "mic_popup": True,               # fenêtre sur le G19 quand le micro est coupé / rétabli
     "headset_mic": True,             # micro du casque HyperX (coupé / ouvert) dans la barre du haut
     "animations": True,              # animation entre pages, fondus à l'ouverture des écrans
     "animation_style": "slide",      # g19/anim.py : slide, fade, zoom, wipe, cube, blinds, none

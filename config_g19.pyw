@@ -510,9 +510,6 @@ class ConfigApp(QMainWindow):
         self.toggle("mic_popup", card, "Fenêtre du micro",
                     "Quand le micro est coupé ou rétabli (Windows ou bouton du casque HyperX), "
                     "son état s'affiche quelques instants par-dessus l'écran du G19.")
-        self.toggle("media_popup", card, "Fenêtre lecture / pause",
-                    "Quand la musique est mise en pause ou reprend, la pochette et l'état "
-                    "s'affichent quelques instants par-dessus l'écran du G19.")
         self.spin("fps", card, "Images par seconde", 2, 60,
                   hint="Jusqu'à 60. Une page fixe ne coûte presque rien ; la fluidité réelle "
                        "s'affiche dans le menu du G19.")
@@ -574,6 +571,7 @@ class ConfigApp(QMainWindow):
         card = self._card(lay, "Événements")
         for key, text, hint in (
                 ("media_toasts", "Changement de musique / média", None),
+                ("pause_toasts", "Musique mise en pause ou relancée", None),
                 ("device_toasts", "Périphérique connecté ou retiré",
                  "USB, Bluetooth et audio, avec la batterie quand il en a une."),
                 ("steam_toasts", "Ami Steam connecté ou qui lance un jeu",
