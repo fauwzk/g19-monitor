@@ -67,9 +67,7 @@ DEFAULTS = {
     "remember_page": True,           # rouvrir sur la dernière page affichée
     "start_page": "system",          # sinon, page de démarrage
     "game_page": "gpu",              # page affichée au lancement d'un jeu ("" = ne pas changer)
-    "fps": 15,                       # images/s sur une page fixe
-    "fps_adaptive": True,            # plus vite tant que l'image bouge (animations, défilements)
-    "fps_motion": 60,                # images/s quand l'image bouge
+    "fps": 15,
     "gpu_power_max": 315,
     "discord_toasts": True,          # bandeau sur toutes les pages à l'arrivée d'un message
     "toast_seconds": 6,

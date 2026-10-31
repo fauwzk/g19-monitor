@@ -84,8 +84,6 @@ SETTINGS_ITEMS = [
     ("game_page", "Page au lancement d'un jeu", "choice", GAME_PAGES),
     ("remember_page", "Rouvrir sur la dernière page", "bool", None),
     ("fps", "Fluidité (images/s)", "int", (5, 60, 5)),
-    ("fps_adaptive", "    plus fluide quand ça bouge", "bool", None),
-    ("fps_motion", "    images/s quand ça bouge", "int", (15, 60, 5)),
     ("animations", "Animations (pages, menus)", "bool", None),
     ("headset_mic", "Micro du casque (barre du haut)", "bool", None),
     ("volume_popup", "Fenêtre de volume", "bool", None),

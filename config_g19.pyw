@@ -47,6 +47,7 @@ from g19.weather import geocode  # noqa: E402
 
 TITLES = settings.PAGE_TITLES
 PREVIEW_SCALE = 1.4
+PREVIEW_FPS = 60
 LIVE = "live"
 GAME_PAGES = [("", "Ne rien changer"), ("gpu", "GPU"), ("games", "Jeux")]
 NIGHT_THEMES = [("", "Inchangé")] + [(k, v) for k, v in THEME_LABELS.items()
@@ -129,6 +130,8 @@ class ConfigApp(QMainWindow):
         self.toggles = []                 # interrupteurs à recolorer avec le thème
         self.ctx = self.media = None
         self._last_sample = self._last_mirror_req = self._update_at = 0.0
+        self._mirror = remote.MirrorReader()   # image du G19 copiée par l'appli (direct)
+        self._cfg, self._cfg_at = None, 0.0     # réglages relus 4 fois/s pour l'aperçu
         self.bridge = Bridge()
         self.bridge.call.connect(lambda fn: fn())
 
@@ -186,9 +189,11 @@ class ConfigApp(QMainWindow):
         self._watch = settings.Watcher()
         threading.Thread(target=self._load_ctx, daemon=True).start()
         self.resize(1360, 860)
+        # aperçu fluide : 60 images/s (le direct comme celui calculé ici)
         self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.PreciseTimer)
         self.timer.timeout.connect(self._tick)
-        self.timer.start(100)
+        self.timer.start(1000 // PREVIEW_FPS)
 
     # --- cadre ---
 
@@ -506,13 +511,8 @@ class ConfigApp(QMainWindow):
                     "Quand le micro est coupé ou rétabli (Windows ou bouton du casque HyperX), "
                     "son état s'affiche quelques instants par-dessus l'écran du G19.")
         self.spin("fps", card, "Images par seconde", 2, 60,
-                  hint="Au repos, sur une page fixe. La fluidité réelle s'affiche dans le "
-                       "menu du G19.")
-        self.toggle("fps_adaptive", card, "Plus fluide quand ça bouge",
-                    "Animations, défilements, fenêtres et vumètres passent au rythme "
-                    "ci-dessous, puis l'écran revient au rythme de repos.")
-        self.spin("fps_motion", card, "Images par seconde en mouvement", 15, 60,
-                  hint="Jusqu'à 60.")
+                  hint="Jusqu'à 60. Une page fixe ne coûte presque rien ; la fluidité réelle "
+                       "s'affiche dans le menu du G19.")
         card = self._card(lay, "Jauges et encarts")
         self.spin("gpu_power_max", card, "Puissance max. du GPU", 100, 700, 5, "W",
                   "Échelle de la jauge Puissance de l'écran GPU.")
@@ -1298,8 +1298,10 @@ class ConfigApp(QMainWindow):
             self.preview_page.setCurrentIndex(0)     # on montre l'effet de la touche
 
     def _show(self, img):
-        img = img.resize((int(320 * PREVIEW_SCALE), int(240 * PREVIEW_SCALE)), Image.LANCZOS)
-        self.preview.setPixmap(pil_to_pixmap(img))
+        # agrandi par Qt (bien plus rapide que PIL à 60 images/s)
+        self.preview.setPixmap(pil_to_pixmap(img).scaled(
+            int(320 * PREVIEW_SCALE), int(240 * PREVIEW_SCALE), Qt.IgnoreAspectRatio,
+            Qt.SmoothTransformation))
 
     def _update_preview(self, now, running):
         live = self.preview_page.currentData() == LIVE
@@ -1307,9 +1309,11 @@ class ConfigApp(QMainWindow):
             if now - self._last_mirror_req >= 1:
                 self._last_mirror_req = now
                 remote.request_mirror()
-            img = remote.read_mirror()
+            img = self._mirror.read()
             if img is not None:
                 return self._show(img)
+            if self._mirror.live():
+                return               # pas de nouvelle image : celle affichée reste
         c = self.ctx
         if not c:
             return
@@ -1329,7 +1333,9 @@ class ConfigApp(QMainWindow):
         except Exception:
             pass
         c.media = self.media.state
-        cfg = self.collect()
+        if self._cfg is None or now - self._cfg_at >= 0.25:
+            self._cfg, self._cfg_at = self.collect(), now
+        cfg = dict(self._cfg)
         page = self.preview_page.currentData()
         if page in (None, LIVE):
             page = cfg["pages"][0]
@@ -1379,10 +1385,7 @@ class ConfigApp(QMainWindow):
                                       "Annuler · M = Menu" if running else
                                       "lance l'appli pour piloter le G19")
                 self._sync_from_file()
-            live = self.preview_page.currentData() == LIVE
-            if live or now - getattr(self, "_frame_at", 0) >= 0.25:
-                self._frame_at = now
-                self._update_preview(now, running)
+            self._update_preview(now, running)
         except Exception as e:          # une erreur d'aperçu ne doit pas fermer la fenêtre
             self.status.setText(f"aperçu : {e.__class__.__name__}: {e}")
 
