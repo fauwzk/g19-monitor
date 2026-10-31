@@ -206,6 +206,9 @@ class VolumeMonitor:
         self.mic_level = None
         self.mic_muted = False
         self.mic_peak = 0.0
+        self.changed_at = 0.0    # dernier changement du volume de sortie (fenêtre du G19)
+        self._ev = None          # IAudioEndpointVolume de la sortie, relu à chaque tour
+        self._seen = None        # (périphérique, niveau, coupé) au tour précédent
         self.sessions = []       # [{"key", "name", "system", "volume", "muted", "peak"}] par appli
         self.error = ""
         self.changes = queue.Queue()   # (nom, "out"|"in", connecté ?) : périphériques audio
@@ -245,6 +248,7 @@ class VolumeMonitor:
                 if dirty or now - last >= 1:   # la sortie par défaut peut changer (casque…)
                     last = now
                     self._refresh()
+                self._read_level()
                 self._read_peaks()
                 self.error = ""
             except Exception as e:
@@ -276,6 +280,7 @@ class VolumeMonitor:
         meters = []
         spk = AudioUtilities.GetSpeakers()
         ev = spk.EndpointVolume
+        self._ev = ev
         self.device = spk.FriendlyName or ""
         self.level = _unit(ev.GetMasterVolumeLevelScalar())
         self.muted = bool(ev.GetMute())
@@ -312,6 +317,19 @@ class VolumeMonitor:
         # appli la plus bruyante en premier, sons système à la fin
         self.sessions = sorted(rows.values(), key=lambda r: (r["system"], r["name"].lower()))
         self._meters = meters
+
+    def _read_level(self):
+        """Volume de sortie relu à chaque tour (pas seulement toutes les secondes) : la fenêtre
+        de volume du G19 suit la molette ou les touches multimédia sans attendre."""
+        if self._ev is None:
+            return
+        self.level = _unit(self._ev.GetMasterVolumeLevelScalar())
+        self.muted = bool(self._ev.GetMute())
+        seen = (self.device, round(self.level * 200), self.muted)
+        # pas de fenêtre au premier tour ni quand on change de sortie (casque ↔ enceintes)
+        if self._seen and self._seen[0] == seen[0] and self._seen != seen:
+            self.changed_at = time.time()
+        self._seen = seen
 
     def _read_peaks(self):
         peaks = {}

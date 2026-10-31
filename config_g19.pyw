@@ -499,6 +499,9 @@ class ConfigApp(QMainWindow):
         self.toggle("headset_mic", card, "Micro du casque dans la barre du haut",
                     "Casque HyperX sans fil : micro barré en rouge quand tu l'as coupé avec le "
                     "bouton du casque.")
+        self.toggle("volume_popup", card, "Fenêtre de volume",
+                    "Quand le son monte, descend ou est coupé, son niveau s'affiche quelques "
+                    "instants par-dessus l'écran du G19.")
         self.spin("fps", card, "Images par seconde", 2, 60,
                   hint="Jusqu'à 60. Une page fixe ne coûte presque rien ; la fluidité réelle "
                        "s'affiche dans le menu du G19.")

@@ -85,6 +85,7 @@ SETTINGS_ITEMS = [
     ("fps", "Fluidité (images/s)", "int", (5, 60, 5)),
     ("animations", "Animations (pages, menus)", "bool", None),
     ("headset_mic", "Micro du casque (barre du haut)", "bool", None),
+    ("volume_popup", "Fenêtre de volume", "bool", None),
     ("animation_style", "    style entre les pages", "choice", ANIM_STYLES),
     ("animation_speed", "    vitesse", "choice", ANIM_SPEEDS),
     ("screen_list_style", "Liste des écrans (Menu)", "choice", SCREEN_LISTS),

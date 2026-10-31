@@ -2362,6 +2362,8 @@ def icon(d, glyph, cx, cy, size, color):
 ICON_BELL, ICON_LOCK, ICON_MESSAGE, ICON_HISTORY = "\uE7ED", "\uE72E", "\uE8BD", "\uE81C"
 ICON_SCREEN, ICON_BOX, ICON_PEOPLE, ICON_BATTERY = "\uE7F4", "\uE7B8", "\uE716", "\uE83F"
 ICON_CAR, ICON_GAME, ICON_MOON = "\uE804", "\uE7FC", "\uE708"
+ICON_VOLUME = ("\uE992", "\uE993", "\uE994", "\uE995")     # 0 à 3 ondes
+ICON_MUTE = "\uE74F"
 
 
 def empty_state(d, glyph, title, subtitle="", color=None, cy=118):
@@ -3177,6 +3179,45 @@ def render(page, c, t=None, post=True):
         slide_toast(img, n, c.discord.avatars if c.discord else None, t,
                     c.settings["toast_seconds"])
     return postprocess(img) if post else img
+
+
+# --- Fenêtre de volume ------------------------------------------------------------------------
+
+VOLUME_POPUP = 1.6       # s affichée après le dernier changement
+VOLUME_FADE_IN, VOLUME_FADE_OUT = 0.12, 0.35
+
+
+def volume_popup(img, c, t):
+    """Fenêtre de volume par-dessus l'écran quand le son monte, descend ou est coupé : niveau en
+    grand, barre qui glisse vers la nouvelle valeur. Apparaît et s'efface en fondu."""
+    vol = c.volume if c else None
+    if not vol or not vol.changed_at or vol.level is None:
+        return img
+    age = t - vol.changed_at
+    if not 0 <= age < VOLUME_POPUP:
+        return img
+    if ANIMATE:
+        alpha = min(1.0, age / VOLUME_FADE_IN, (VOLUME_POPUP - age) / VOLUME_FADE_OUT)
+        rise = int(6 * (1 - min(1.0, age / VOLUME_FADE_IN)))
+    else:
+        alpha, rise = 1.0, 0
+    level = vol.level * 100
+    shown = glide("volume_popup", level, t, 0.06)
+    muted = vol.muted
+    out = img.copy()
+    d = ImageDraw.Draw(out)
+    x0, x1, y0 = 56, W - 56, 170 + rise
+    panel(d, (x0, y0, x1, y0 + 50), 10, outline=dim(ACCENT, 0.6))
+    glyph = ICON_MUTE if muted or level < 0.5 else ICON_VOLUME[min(3, 1 + int(level // 34))]
+    icon(d, glyph, x0 + 22, y0 + 25, 20, HOT if muted else ACCENT)
+    label = "coupé" if muted else f"{shown:.0f} %"
+    d.text((x1 - 12, y0 + 17), label, font=font(15, True), fill=HOT if muted else TEXT,
+           anchor="rm")
+    name = fit(d, getattr(vol, "device", "") or "Volume", font(9), 100)
+    d.text((x0 + 42, y0 + 17), name, font=font(9), fill=MUTED, anchor="lm")
+    bar(d, x0 + 42, y0 + 30, x1 - x0 - 54, 8, shown / 100, dim(MUTED, 0.8) if muted else ACCENT,
+        smooth=True)
+    return out if alpha >= 0.99 else Image.blend(img, out, alpha)
 
 
 # --- Test de débit -----------------------------------------------------------------------------
