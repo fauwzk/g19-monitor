@@ -105,6 +105,7 @@ def turn_question(event):
 
 LOCK_WAIT = 2.0      # s d'attente au plus du verrou d'une autre écriture de la même session
 LOCK_STALE = 10.0    # verrou plus vieux : laissé par un hook tué, on le reprend
+STOP_GRACE = 5.0     # s après « Stop » où un événement d'outil est un retardataire du tour fini
 
 
 def apply(state, event, name, question):
@@ -222,6 +223,12 @@ def main():
         # un événement arrivé après celui-ci a déjà écrit (ex. « Stop » juste après le dernier
         # outil) : ne pas le remplacer par un état plus ancien
         if state.get("updated", 0) > started:
+            return
+        # le hook du dernier outil et celui de « Stop » partent presque ensemble ; chacun lance
+        # son Python, et le premier peut démarrer après le second : un outil juste après
+        # « Stop » est ce retardataire, pas un nouveau tour (qui commence par la question)
+        if (name in ("PreToolUse", "PostToolUse") and state.get("event") == "Stop"
+                and started - state.get("updated", 0) < STOP_GRACE):
             return
         if not apply(state, event, name, question):
             return
