@@ -88,6 +88,7 @@ SETTINGS_ITEMS = [
     ("headset_mic", "Micro du casque (barre du haut)", "bool", None),
     ("volume_popup", "Fenêtre de volume", "bool", None),
     ("mic_popup", "Fenêtre micro coupé / activé", "bool", None),
+    ("media_popup", "Fenêtre lecture / pause", "bool", None),
     ("animation_style", "    style entre les pages", "choice", ANIM_STYLES),
     ("animation_speed", "    vitesse", "choice", ANIM_SPEEDS),
     ("screen_list_style", "Liste des écrans (Menu)", "choice", SCREEN_LISTS),

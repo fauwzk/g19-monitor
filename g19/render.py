@@ -408,6 +408,7 @@ class Ctx:
     show_lyrics: bool = False    # page Média : paroles à la place du lecteur (bouton OK)
     audio_cursor: int = None     # page Audio : ligne en réglage (None = hors réglage)
     discord_cursor: int = None   # page Discord : ligne du panneau d'appel (None = fermé)
+    media_toggle: tuple = None   # (horodatage, en lecture ?) : lecture / pause du même morceau
     audio_pick: dict = None      # page Audio : périphérique en cours de choix {"out"|"in": i}
     claude_open: bool = True     # faux : voyant et encart Claude masqués
     scroll: int = 0
@@ -2457,6 +2458,7 @@ ICON_CAR, ICON_GAME, ICON_MOON = "\uE804", "\uE7FC", "\uE708"
 ICON_VOLUME = ("\uE992", "\uE993", "\uE994", "\uE995")     # 0 à 3 ondes
 ICON_MUTE = "\uE74F"
 ICON_MIC = "\uE720"
+ICON_PLAY, ICON_PAUSE = "\uE768", "\uE769"
 
 
 def empty_state(d, glyph, title, subtitle="", color=None, cy=118):
@@ -3404,7 +3406,8 @@ _popup_since = _popup_change = 0.0    # début de l'affichage en cours, dernier 
 
 
 def popup_event(c, settings=None):
-    """Dernier changement à montrer : ("volume" | "mic" | "headset", horodatage) ou None."""
+    """Dernier changement à montrer : ("volume" | "mic" | "headset" | "media", horodatage)
+    ou None."""
     s = settings if settings is not None else (c.settings if c else {})
     vol = c.volume if c else None
     hx = getattr(c.batteries, "hyperx", None) if c and c.batteries else None
@@ -3416,6 +3419,8 @@ def popup_event(c, settings=None):
             events.append(("mic", getattr(vol, "mic_changed_at", 0.0)))
         if hx:
             events.append(("headset", getattr(hx, "mic_changed_at", 0.0)))
+    if s.get("media_popup", True) and c and c.media_toggle:
+        events.append(("media", c.media_toggle[0]))
     events = [e for e in events if e[1]]
     return max(events, key=lambda e: e[1]) if events else None
 
@@ -3446,6 +3451,9 @@ def volume_popup(img, c, t):
     out = img.copy()
     d = ImageDraw.Draw(out)
     x0, x1, y0 = 56, W - 56, 170 + rise
+    if kind == "media":
+        media_popup(out, d, c, x0, x1, y0)
+        return out if alpha >= 0.99 else Image.blend(img, out, alpha)
     if kind != "volume":
         mic_popup(d, c, kind, x0, x1, y0)
         return out if alpha >= 0.99 else Image.blend(img, out, alpha)
@@ -3483,6 +3491,31 @@ def mic_popup(d, c, kind, x0, x1, y0):
            fill=color, anchor="lm")
     d.text((x0 + 46, y0 + 36), fit(d, name, font(9), x1 - x0 - 58), font=font(9), fill=MUTED,
            anchor="lm")
+
+
+def media_popup(img, d, c, x0, x1, y0):
+    """Contenu de la fenêtre pour lecture / pause : pochette, état en grand, titre et artiste."""
+    m = c.media
+    playing = bool(c.media_toggle[1])
+    color = media_accent(m) if m and m.accent else ACCENT
+    panel(d, (x0, y0, x1, y0 + 50), 10, outline=dim(color if playing else MUTED, 0.6))
+    ax, ay, side = x0 + 7, y0 + 6, 38
+    if m and m.art:
+        art = m.art.resize((side, side), Image.LANCZOS)
+        img.paste(art, (ax, ay), art if art.mode == "RGBA" else None)
+        # pastille de l'état sur la pochette
+        d.ellipse((ax + side - 15, ay + side - 15, ax + side + 3, ay + side + 3), fill=PANEL)
+        icon(d, ICON_PLAY if playing else ICON_PAUSE, ax + side - 6, ay + side - 6, 10,
+             color if playing else TEXT)
+    else:
+        icon(d, ICON_PLAY if playing else ICON_PAUSE, ax + side // 2, ay + side // 2, 22,
+             color if playing else TEXT)
+    tx = ax + side + 9
+    d.text((tx, y0 + 15), "Lecture" if playing else "En pause", font=font(14, True),
+           fill=color if playing else TEXT, anchor="lm")
+    line = " · ".join(p for p in ((m.title if m else ""), (m.artist if m else "")) if p)
+    d.text((tx, y0 + 34), fit(d, line or "média", font(10), x1 - tx - 10), font=font(10),
+           fill=MUTED, anchor="lm")
 
 
 # --- Test de débit -----------------------------------------------------------------------------
