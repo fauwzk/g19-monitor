@@ -103,23 +103,12 @@ def turn_question(event):
     return text.splitlines()[-1].strip("*_ ")[:80]
 
 
-def main():
-    event = json.loads(sys.stdin.buffer.read() or b"{}")
-    sid = event.get("session_id")
-    if not sid:
-        return
-    name = event.get("hook_event_name", "")
-    path = STATUS_DIR / f"{sid}.json"
+LOCK_WAIT = 2.0      # s d'attente au plus du verrou d'une autre écriture de la même session
+LOCK_STALE = 10.0    # verrou plus vieux : laissé par un hook tué, on le reprend
 
-    if name == "SessionEnd":
-        path.unlink(missing_ok=True)
-        return
 
-    try:
-        state = json.loads(path.read_text("utf-8"))
-    except (OSError, ValueError):
-        state = {"session_id": sid, "started": time.time(), "state": "idle"}
-
+def apply(state, event, name, question):
+    """Met à jour `state` selon l'événement ; False pour un événement ignoré."""
     tool = event.get("tool_name", "")
     if name in ("UserPromptSubmit", "PostToolUse"):
         state.update(state="working", message="")
@@ -151,7 +140,7 @@ def main():
             msg = msg.replace("Claude needs your permission to use", "permission")
             state.update(state="waiting", message=msg[:80])
     elif name == "Stop":
-        question = state.pop("pending_question", None) or turn_question(event)
+        question = state.pop("pending_question", None) or question
         if question:
             state.update(state="waiting", message=question, tool="")
         else:
@@ -159,25 +148,99 @@ def main():
     elif name == "SessionStart":
         state.update(state="idle", message="", tool="")
     else:
-        return
+        return False
+    return True
 
-    ctx = context_tokens(event.get("transcript_path"))
-    if ctx:
-        state["context"] = ctx
-    if not state.get("pids"):
-        state["pids"] = ancestors()
-    # session de l'appli Claude (onglet Code) : son identifiant « local_… » permet de la
-    # rouvrir directement (claude://code/continue?session=…), pas seulement sa fenêtre
-    host = os.environ.get("CLAUDE_CODE_HOST_SESSION_ID", "")
-    if host:
-        state["host_id"] = host
-    state["cwd"] = event.get("cwd") or state.get("cwd", "")
-    state["event"] = name
-    state["updated"] = time.time()
-    STATUS_DIR.mkdir(parents=True, exist_ok=True)
+
+def locked(path):
+    """Verrou de fichier (création exclusive) autour de la lecture-écriture d'une session :
+    deux hooks lancés presque ensemble ne doivent pas s'écraser."""
+    lock = path.with_suffix(".lock")
+    end = time.time() + LOCK_WAIT
+    while True:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return lock
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > LOCK_STALE:
+                    lock.unlink(missing_ok=True)
+                    continue
+            except OSError:
+                pass
+            if time.time() > end:
+                return None          # tant pis : on écrit quand même
+            time.sleep(0.02)
+
+
+def write(path, state):
+    """Écriture atomique ; le remplacement est retenté si le moniteur lit le fichier au même
+    instant (Windows le refuse alors), et le fichier temporaire n'est jamais laissé."""
     tmp = path.with_suffix(f".{os.getpid()}.tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False), "utf-8")
-    os.replace(tmp, path)
+    try:
+        for _ in range(50):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                time.sleep(0.02)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def main():
+    started = time.time()     # arrivée de l'événement : sert à les remettre dans l'ordre
+    event = json.loads(sys.stdin.buffer.read() or b"{}")
+    sid = event.get("session_id")
+    if not sid:
+        return
+    name = event.get("hook_event_name", "")
+    path = STATUS_DIR / f"{sid}.json"
+
+    if name == "SessionEnd":
+        path.unlink(missing_ok=True)
+        return
+
+    # lectures lentes du transcript avant de prendre le verrou
+    question = turn_question(event) if name == "Stop" else None
+    ctx = context_tokens(event.get("transcript_path"))
+    STATUS_DIR.mkdir(parents=True, exist_ok=True)
+    for old in STATUS_DIR.glob(f"{sid}.*.tmp"):     # restes d'écritures interrompues
+        try:
+            if started - old.stat().st_mtime > 60:
+                old.unlink()
+        except OSError:
+            pass
+
+    lock = locked(path)
+    try:
+        try:
+            state = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            state = {"session_id": sid, "started": started, "state": "idle"}
+        # un événement arrivé après celui-ci a déjà écrit (ex. « Stop » juste après le dernier
+        # outil) : ne pas le remplacer par un état plus ancien
+        if state.get("updated", 0) > started:
+            return
+        if not apply(state, event, name, question):
+            return
+        if ctx:
+            state["context"] = ctx
+        if not state.get("pids"):
+            state["pids"] = ancestors()
+        # session de l'appli Claude (onglet Code) : son identifiant « local_… » permet de la
+        # rouvrir directement (claude://code/continue?session=…), pas seulement sa fenêtre
+        host = os.environ.get("CLAUDE_CODE_HOST_SESSION_ID", "")
+        if host:
+            state["host_id"] = host
+        state["cwd"] = event.get("cwd") or state.get("cwd", "")
+        state["event"] = name
+        state["updated"] = started
+        write(path, state)
+    finally:
+        if lock:
+            lock.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

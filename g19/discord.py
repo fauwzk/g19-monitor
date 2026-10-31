@@ -215,6 +215,8 @@ class DiscordClient:
         self.user = None
         self.voice = None         # {id, name, guild, members: {uid: {...}}}
         self.self_mute = self.self_deaf = False
+        self.input_volume = None  # volume de mon micro dans Discord, 0..100
+        self.output_volume = None  # volume de l'appel, 0..200 (100 = normal)
         self.notifications = deque(maxlen=20)
         self.unread = 0
         self.last_notification = 0.0
@@ -233,6 +235,35 @@ class DiscordClient:
 
     def toggle_deaf(self):
         self._out.put(("SET_VOICE_SETTINGS", {"deaf": not self.self_deaf}))
+
+    def set_input_volume(self, v):
+        v = max(0, min(100, round(v)))
+        self.input_volume = v               # affiché tout de suite, confirmé par Discord
+        self._out.put(("SET_VOICE_SETTINGS", {"input": {"volume": v}}))
+
+    def set_output_volume(self, v):
+        v = max(0, min(200, round(v)))
+        self.output_volume = v
+        self._out.put(("SET_VOICE_SETTINGS", {"output": {"volume": v}}))
+
+    def set_user_volume(self, uid, v):
+        """Volume d'un participant pour moi seul (0..200, 100 = normal)."""
+        v = max(0, min(200, round(v)))
+        m = self.voice and self.voice["members"].get(uid)
+        if m:
+            m["volume"] = v
+        self._out.put(("SET_USER_VOICE_SETTINGS", {"user_id": uid, "volume": v}))
+
+    def toggle_user_mute(self, uid):
+        """Coupe (pour moi seul) ou rétablit un participant."""
+        m = self.voice and self.voice["members"].get(uid)
+        if m:
+            m["local_mute"] = not m.get("local_mute")
+            self._out.put(("SET_USER_VOICE_SETTINGS", {"user_id": uid,
+                                                       "mute": m["local_mute"]}))
+
+    def leave_call(self):
+        self._out.put(("SELECT_VOICE_CHANNEL", {"channel_id": None, "force": True}))
 
     def mark_read(self):
         self.unread = 0
@@ -325,6 +356,17 @@ class DiscordClient:
         elif cmd in ("GET_VOICE_SETTINGS", "SET_VOICE_SETTINGS") or evt == "VOICE_SETTINGS_UPDATE":
             self.self_mute = bool(data.get("mute"))
             self.self_deaf = bool(data.get("deaf"))
+            if isinstance(data.get("input"), dict) and data["input"].get("volume") is not None:
+                self.input_volume = float(data["input"]["volume"])
+            if isinstance(data.get("output"), dict) and data["output"].get("volume") is not None:
+                self.output_volume = float(data["output"]["volume"])
+        elif cmd == "SET_USER_VOICE_SETTINGS" and self.voice:
+            m = self.voice["members"].get(data.get("user_id"))
+            if m:
+                if data.get("volume") is not None:
+                    m["volume"] = float(data["volume"])
+                if data.get("mute") is not None:
+                    m["local_mute"] = bool(data["mute"])
         elif evt == "VOICE_CHANNEL_SELECT":
             if data.get("channel_id"):
                 self._pipe.command("GET_SELECTED_VOICE_CHANNEL")
@@ -402,9 +444,12 @@ class DiscordClient:
             self.voice = None
             return
         guild_id = ch.get("guild_id")
+        same = old and old["id"] == ch["id"]
         self.voice = {"id": ch["id"], "name": ch.get("name") or "Appel privé",
                       "guild_id": guild_id, "guild": self._guilds.get(guild_id, ""),
-                      "members": {}}
+                      "members": {},
+                      # début de l'appel (gardé si Discord renvoie le même salon)
+                      "since": old["since"] if same and old.get("since") else time.time()}
         for vs in ch.get("voice_states", []):
             self._upsert(vs)
         if not old or old["id"] != ch["id"]:
@@ -423,7 +468,9 @@ class DiscordClient:
             "id": uid,
             "name": vs.get("nick") or user.get("global_name") or user.get("username", "?"),
             "avatar": avatar_url(user),
-            "mute": bool(st.get("self_mute") or st.get("mute") or vs.get("mute")),
+            "mute": bool(st.get("self_mute") or st.get("mute")),
+            "local_mute": bool(vs.get("mute")),    # coupé pour moi seul
+            "volume": float(vs.get("volume") if vs.get("volume") is not None else 100),
             "deaf": bool(st.get("self_deaf") or st.get("deaf")),
             "speaking": prev.get("speaking", False),
             "me": self.user and uid == self.user.get("id"),

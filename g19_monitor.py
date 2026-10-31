@@ -44,7 +44,8 @@ def _startup_failed():
 
 
 try:
-    from g19 import config, instance, mixer, night, remote, rtss, screen, settings, version
+    from g19 import (config, discord_panel, instance, mixer, night, remote, rtss, screen,
+                     settings, version)
     from g19.alerts import AlertMonitor
     from g19.anim import Transitions
     from g19.updater import Updater
@@ -399,6 +400,8 @@ def subview(c, page):
         return c.history_view
     if page == "screen" and c.mirror:
         return c.mirror.screen
+    if page == "discord":
+        return c.discord_cursor is not None      # panneau d'appel
     return None
 
 
@@ -802,6 +805,8 @@ def run():
                     continue
                 if page == "audio" and not menu.open and mixer.handle(c, b):
                     continue
+                if page == "discord" and not menu.open and discord_panel.handle(c, b):
+                    continue
                 if page == "system" and b == "ok" and not menu.open and c.fans.readings:
                     ids = [pid for pid, _ in FAN_CHIPS]
                     fan_panel = ids.index(cfg["fan_profile"]) if cfg["fan_profile"] in ids else 0
@@ -927,6 +932,8 @@ def run():
                 c.discord.mark_read()
             if page != "audio":
                 c.audio_cursor = None
+            if page != "discord":
+                c.discord_cursor = None
             if page != shown_page:
                 shown_page = page
                 guarded("état", settings.save_state, page=page)

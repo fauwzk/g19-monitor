@@ -407,6 +407,7 @@ class Ctx:
     steam_scroll: int = 0
     show_lyrics: bool = False    # page Média : paroles à la place du lecteur (bouton OK)
     audio_cursor: int = None     # page Audio : ligne en réglage (None = hors réglage)
+    discord_cursor: int = None   # page Discord : ligne du panneau d'appel (None = fermé)
     audio_pick: dict = None      # page Audio : périphérique en cours de choix {"out"|"in": i}
     claude_open: bool = True     # faux : voyant et encart Claude masqués
     scroll: int = 0
@@ -3062,6 +3063,9 @@ def page_discord(img, d, dc, t):
         state = "SOURDINE" if dc.self_deaf else "MUET" if dc.self_mute else "micro ouvert"
         d.text((W - 14, 39), state, font=font(10, True),
                fill=HOT if dc.self_deaf or dc.self_mute else OK, anchor="rm")
+        if v.get("since"):      # durée de l'appel, sous l'état du micro
+            d.text((W - 14, 53), fmt_time(t - v["since"]), font=font(10), fill=MUTED,
+                   anchor="rm")
         members = sorted(v["members"].values(), key=lambda m: (not m["me"], m["name"].lower()))
         for i, m in enumerate(members[:10]):
             cx = 36 + (i % 5) * 62
@@ -3070,6 +3074,9 @@ def page_discord(img, d, dc, t):
                    ring=OK if m["speaking"] else None)
             if m["mute"] or m["deaf"]:
                 d.ellipse((cx + 6, cy + 5, cx + 14, cy + 13), fill=HOT)
+            if m.get("local_mute"):        # coupé pour moi seul : pastille barrée
+                d.ellipse((cx - 14, cy + 5, cx - 6, cy + 13), fill=MUTED)
+                d.line((cx - 13, cy + 6, cx - 7, cy + 12), fill=BG, width=2)
             d.text((cx, cy + 19), fit(d, m["name"], font(9), 58), font=font(9),
                    fill=TEXT if m["speaking"] else MUTED, anchor="mm")
         if len(members) > 10:
@@ -3079,11 +3086,13 @@ def page_discord(img, d, dc, t):
         d.text((10, 36), "Pas en vocal", font=font(11), fill=MUTED, anchor="lm")
         y = 48
 
+    hints = ([("OK", "muet"), ("▲", "sourdine")] if v else []) + [("▼", "panneau")]
+    key_hints(d, H - 8, hints, "right")
     if not dc.notifications:
-        d.text((W // 2, (y + 236) // 2), "Aucun message reçu depuis le lancement",
+        d.text((W // 2, (y + 224) // 2), "Aucun message reçu depuis le lancement",
                font=font(11), fill=MUTED, anchor="mm")
         return
-    rows = (238 - y) // 36
+    rows = (226 - y) // 36
     for i, n in enumerate(list(dc.notifications)[:rows]):
         ry = y + i * 36
         # panneau du thème (reflet G19, verre Aero…) comme les autres listes, liseré Discord
@@ -3100,6 +3109,108 @@ def page_discord(img, d, dc, t):
         d.text((W - 12, ry + 8), fmt_age(t - n["time"]), font=font(9), fill=MUTED, anchor="rm")
         d.text((42, ry + 24), fit(d, n["body"], font(11), W - 56), font=font(11),
                fill=dim(TEXT, 0.85), anchor="lm")
+
+
+DISCORD_ROW = 26
+
+
+def page_discord_panel(img, d, c, t):
+    """Panneau d'appel : volumes (micro, appel, chaque participant), quitter, puis les
+    messages ; ▲ ▼ choisir, ◄ ► régler, OK couper / ouvrir, Annuler fermer."""
+    from . import discord_panel
+
+    dc = c.discord
+    lines = discord_panel.rows(dc)
+    cur = min(c.discord_cursor or 0, max(0, len(lines) - 1))
+    v = dc.voice
+    title = f"Appel · {v['name']}" if v else "Messages"
+    d.text((10, 36), fit(d, title, font(12, True), 150), font=font(12, True), fill=TEXT,
+           anchor="lm")
+    sel = lines[cur]["kind"] if lines else None
+    hints = [("◄►", "régler")] if sel in ("input", "output", "member") else []
+    hints += [("OK", {"input": "muet", "output": "sourdine", "member": "couper",
+                      "leave": "quitter", "message": "ouvrir"}.get(sel, "ok"))]
+    key_hints(d, 36, hints, "right")
+    top = 46
+    visible = (H - 4 - top) // DISCORD_ROW
+    bottom = top + visible * DISCORD_ROW          # pas de ligne coupée en bas
+    scroll = max(0, min(cur - visible // 2, len(lines) - visible))
+    members = v["members"] if v else {}
+    notes = list(dc.notifications)
+
+    def vol_row(ld, y, on, icon_fn, muted, label, frac, text, mark=None, avatar_of=None):
+        cy = y + DISCORD_ROW // 2
+        if avatar_of is not None:
+            avatar(ld._image, ld, dc.avatars, avatar_of["avatar"], 20, cy, 18,
+                   avatar_of["name"])
+        else:
+            icon_fn(ld, 14, cy, muted, HOT if muted else TEXT)
+        ld.text((36, cy), fit(ld, label, font(11, True), 92), font=font(11, True),
+                fill=MUTED if muted else TEXT, anchor="lm")
+        x0, bw = 134, 120
+        if on:
+            ld.text((x0 - 8, cy), "◄", font=font(9, True), fill=TEXT, anchor="mm")
+            ld.text((x0 + bw + 8, cy), "►", font=font(9, True), fill=TEXT, anchor="mm")
+        bar(ld, x0, cy - 3, bw, 6, 0 if muted else frac, dim(MUTED, 0.8) if muted else DISCORD,
+            smooth=True)
+        if mark is not None:       # repère du volume normal (100 %)
+            mx = x0 + int(bw * mark)
+            ld.line((mx, cy - 6, mx, cy + 6), fill=dim(TEXT, 0.6))
+        ld.text((W - 10, cy), text, font=font(10, True), fill=HOT if muted else TEXT,
+                anchor="rm")
+
+    def draw_row(layer, ld, idx, y):
+        row = lines[idx]
+        kind, on = row["kind"], idx == cur
+        if on:
+            panel(ld, (4, y + 1, W - 4, y + DISCORD_ROW - 1), 5,
+                  outline=None if _theme == "g19" else DISCORD,
+                  color=dim(DISCORD, 0.35) if _theme == "g19" else PANEL)
+        cy = y + DISCORD_ROW // 2
+        if kind == "input":
+            iv = dc.input_volume
+            vol_row(ld, y, on, mic_icon, dc.self_mute, "Mon micro", (iv or 0) / 100,
+                    "muet" if dc.self_mute else "—" if iv is None else f"{iv:.0f} %")
+        elif kind == "output":
+            ov = dc.output_volume
+            vol_row(ld, y, on, speaker_icon, dc.self_deaf, "Son de l'appel", (ov or 0) / 200,
+                    "sourdine" if dc.self_deaf else "—" if ov is None else f"{ov:.0f} %",
+                    mark=0.5)
+        elif kind == "member":
+            m = members.get(row["id"])
+            if not m:
+                return
+            muted = bool(m.get("local_mute"))
+            vol_row(ld, y, on, speaker_icon, muted, m["name"], m.get("volume", 100) / 200,
+                    "coupé" if muted else f"{m.get('volume', 100):.0f} %", mark=0.5,
+                    avatar_of=m)
+            if m["speaking"]:
+                ld.ellipse((27, cy - 12, 31, cy - 8), fill=OK)
+        elif kind == "leave":
+            ld.text((W // 2, cy), "Quitter l'appel", font=font(11, True), fill=HOT, anchor="mm")
+        elif kind == "message":
+            n = notes[row["index"]] if row["index"] < len(notes) else None
+            if not n:
+                return
+            ld.rounded_rectangle((6, y + 3, 9, y + DISCORD_ROW - 3), 2, fill=DISCORD)
+            who = fit(ld, n["author"], font(10, True), 90)
+            ld.text((16, cy - 6), who, font=font(10, True), fill=TEXT, anchor="lm")
+            where = n.get("where") or ""
+            if where:
+                wx = 16 + ld.textlength(who, font=font(10, True)) + 5
+                ld.text((wx, cy - 6), fit(ld, where, font(9), 250 - wx), font=font(9),
+                        fill=MUTED, anchor="lm")
+            ld.text((W - 10, cy - 6), fmt_age(t - n["time"]), font=font(9), fill=MUTED,
+                    anchor="rm")
+            ld.text((16, cy + 6), fit(ld, n["body"], font(10), W - 30), font=font(10),
+                    fill=dim(TEXT, 0.85), anchor="lm")
+        if kind == "leave" or (kind == "message" and idx == len(lines) - len(notes)):
+            ld.line((10, y, W - 10, y), fill=TRACK)        # séparation appel / messages
+
+    if not lines:
+        empty_state(d, ICON_PEOPLE, "Discord", "ni appel ni message", DISCORD)
+        return
+    smooth_rows(img, "discord_panel", scroll, len(lines), top, bottom, DISCORD_ROW, draw_row, t)
 
 
 # --- Assemblage --------------------------------------------------------------------------------
@@ -3153,7 +3264,10 @@ def render(page, c, t=None, post=True):
     elif page == "gpu":
         page_gpu(d, c.stats, c.gpu, t, c.settings["gpu_power_max"], c.gpu_view)
     elif page == "discord":
-        page_discord(img, d, c.discord, t)
+        if c.discord_cursor is not None and c.discord and c.discord.status == "connecté":
+            page_discord_panel(img, d, c, t)
+        else:
+            page_discord(img, d, c.discord, t)
     elif page == "notifs":
         page_notifs(img, d, c, t)
     elif page == "speedtest":
