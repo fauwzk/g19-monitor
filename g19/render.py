@@ -3185,20 +3185,29 @@ def render(page, c, t=None, post=True):
 
 VOLUME_POPUP = 1.6       # s affichée après le dernier changement
 VOLUME_FADE_IN, VOLUME_FADE_OUT = 0.12, 0.35
+_popup_since = _popup_change = 0.0    # début de l'affichage en cours, dernier changement vu
 
 
 def volume_popup(img, c, t):
     """Fenêtre de volume par-dessus l'écran quand le son monte, descend ou est coupé : niveau en
     grand, barre qui glisse vers la nouvelle valeur. Apparaît et s'efface en fondu."""
+    global _popup_since, _popup_change
     vol = c.volume if c else None
     if not vol or not vol.changed_at or vol.level is None:
         return img
-    age = t - vol.changed_at
-    if not 0 <= age < VOLUME_POPUP:
+    if vol.changed_at != _popup_change:
+        # déjà affichée : elle reste en place et se met à jour, sans refaire son apparition
+        if not (_popup_change and vol.changed_at - _popup_change < VOLUME_POPUP):
+            _popup_since = vol.changed_at
+        _popup_change = vol.changed_at
+    # changement annoncé par Windows juste après l'heure de cette image : âge nul, pas négatif
+    age = max(0.0, t - vol.changed_at)
+    if age >= VOLUME_POPUP:
         return img
     if ANIMATE:
-        alpha = min(1.0, age / VOLUME_FADE_IN, (VOLUME_POPUP - age) / VOLUME_FADE_OUT)
-        rise = int(6 * (1 - min(1.0, age / VOLUME_FADE_IN)))
+        shown_for = max(0.0, t - _popup_since)
+        alpha = min(1.0, shown_for / VOLUME_FADE_IN, (VOLUME_POPUP - age) / VOLUME_FADE_OUT)
+        rise = int(6 * (1 - min(1.0, shown_for / VOLUME_FADE_IN)))
     else:
         alpha, rise = 1.0, 0
     level = vol.level * 100

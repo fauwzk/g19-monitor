@@ -74,7 +74,7 @@ try:
     from g19.media import MediaMonitor
     from g19.notifications import WindowsNotifications, flash_kind
     from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, RECAP_SECONDS, Ctx, has_lyrics, ignored,
-                            volume_popup,
+                            volume_popup, VOLUME_POPUP,
                             render, render_away, render_fans, render_idle, render_menu, render_recap,
                             render_splash, theme_of, toast_candidates, current_toast)
     from g19.sysalerts import SystemWatch
@@ -1008,7 +1008,13 @@ def run():
                 if first:
                     log.info("fluidité : %.1f images/s (réglage %s)", menu.real_fps, cfg["fps"])
             lcd.update()
-            time.sleep(max(0.0, 1 / cfg["fps"] - (time.time() - now)))
+            # pendant la fenêtre de volume, au moins 30 images/s pour que la barre glisse ; un
+            # changement de volume réveille la boucle tout de suite
+            step = 1 / cfg["fps"]
+            if now - c.volume.changed_at < VOLUME_POPUP:
+                step = min(step, 1 / 30)
+            c.volume.wake.clear()
+            c.volume.wake.wait(max(0.0, step - (time.time() - now)))
         log.info("relance" if restart else "arrêt demandé")
     except KeyboardInterrupt:
         pass

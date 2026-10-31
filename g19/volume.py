@@ -11,8 +11,10 @@ try:
     import comtypes
     from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
     from pycaw.constants import ERole
+    from pycaw.callbacks import AudioEndpointVolumeCallback
 except ImportError:
     AudioUtilities = None
+    AudioEndpointVolumeCallback = object
 
 CLSCTX_ALL = 23
 RENDER, CAPTURE = 0, 1
@@ -193,6 +195,18 @@ def list_devices():
         comtypes.CoUninitialize()
 
 
+class _VolumeEvents(AudioEndpointVolumeCallback):
+    """Prévenu par Windows dès que le volume ou la coupure de la sortie change (molette, touches
+    multimédia, autre appli), sans attendre le prochain tour du fil audio."""
+
+    def __init__(self, monitor):
+        super().__init__()
+        self.monitor = monitor
+
+    def on_notify(self, new_volume, new_mute, event_context, channels, channel_volumes):
+        self.monitor._level_changed(_unit(new_volume), bool(new_mute))
+
+
 class VolumeMonitor:
     def __init__(self):
         self.device = ""
@@ -209,6 +223,8 @@ class VolumeMonitor:
         self.changed_at = 0.0    # dernier changement du volume de sortie (fenêtre du G19)
         self._ev = None          # IAudioEndpointVolume de la sortie, relu à chaque tour
         self._seen = None        # (périphérique, niveau, coupé) au tour précédent
+        self._events = None      # (IAudioEndpointVolume, _VolumeEvents) abonné aux changements
+        self.wake = threading.Event()   # levé à chaque changement : le G19 redessine aussitôt
         self.sessions = []       # [{"key", "name", "system", "volume", "muted", "peak"}] par appli
         self.error = ""
         self.changes = queue.Queue()   # (nom, "out"|"in", connecté ?) : périphériques audio
@@ -281,6 +297,8 @@ class VolumeMonitor:
         spk = AudioUtilities.GetSpeakers()
         ev = spk.EndpointVolume
         self._ev = ev
+        if self.device != (spk.FriendlyName or "") or self._events is None:
+            self._subscribe(ev)
         self.device = spk.FriendlyName or ""
         self.level = _unit(ev.GetMasterVolumeLevelScalar())
         self.muted = bool(ev.GetMute())
@@ -323,13 +341,33 @@ class VolumeMonitor:
         de volume du G19 suit la molette ou les touches multimédia sans attendre."""
         if self._ev is None:
             return
-        self.level = _unit(self._ev.GetMasterVolumeLevelScalar())
-        self.muted = bool(self._ev.GetMute())
-        seen = (self.device, round(self.level * 200), self.muted)
+        self._level_changed(_unit(self._ev.GetMasterVolumeLevelScalar()), bool(self._ev.GetMute()))
+
+    def _level_changed(self, level, muted):
+        """Nouveau volume de sortie (lu par le fil audio ou annoncé par Windows)."""
+        self.level, self.muted = level, muted
+        seen = (self.device, round(level * 200), muted)
         # pas de fenêtre au premier tour ni quand on change de sortie (casque ↔ enceintes)
         if self._seen and self._seen[0] == seen[0] and self._seen != seen:
             self.changed_at = time.time()
+            self.wake.set()
         self._seen = seen
+
+    def _subscribe(self, ev):
+        """Abonnement aux changements de volume de la sortie par défaut (refait quand elle
+        change) ; sans lui, la relecture à chaque tour prend le relais."""
+        old, self._events = self._events, None
+        if old:
+            try:
+                old[0].UnregisterControlChangeNotify(old[1])
+            except Exception:
+                pass
+        try:
+            cb = _VolumeEvents(self)
+            ev.RegisterControlChangeNotify(cb)
+            self._events = (ev, cb)
+        except Exception:
+            pass
 
     def _read_peaks(self):
         peaks = {}
