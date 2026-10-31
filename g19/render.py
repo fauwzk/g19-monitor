@@ -1940,83 +1940,156 @@ def fmt_size(n):
 FRIENDS_VISIBLE = 5
 
 
+STEAM_GAME_ROW = 28
+
+
+def fmt_eta(sec):
+    sec = int(sec)
+    if sec < 60:
+        return "moins d'1 min"
+    if sec < 3600:
+        return f"{sec // 60} min"
+    return f"{sec // 3600} h {sec % 3600 // 60:02d}"
+
+
 def page_steam(img, d, c, t):
-    """Steam : téléchargements / mises à jour en cours, puis amis en ligne."""
+    """Steam : le téléchargement en cours en grand (bannière, vitesse, temps restant) et la file
+    en dessous ; puis les amis en jeu (avec leur jeu) et les autres en ligne, en avatars."""
     sl = c.steam
     if not sl or not sl.root:
-        d.text((W // 2, 120), "Steam introuvable", font=font(16, True), fill=MUTED, anchor="mm")
+        empty_state(d, ICON_GAME, "Steam", "Steam introuvable sur ce PC", STEAM_BLUE)
         return
     lib = getattr(c.games, "steam", None) if c.games else None
-    y = 30
-    d.text((10, y + 6), "TÉLÉCHARGEMENTS", font=font(9, True), fill=STEAM_BLUE, anchor="lm")
-    if not sl.running:
-        d.text((W - 10, y + 6), "Steam fermé", font=font(9), fill=MUTED, anchor="rm")
-    y += 14
-    downloads = sl.downloads[:2]
-    if not downloads:
-        d.text((12, y + 9), "Aucune mise à jour en cours", font=font(11), fill=MUTED, anchor="lm")
-        y += 22
-    for dl in downloads:
-        panel(d, (6, y, W - 6, y + 34), 5)
-        thumb = None
-        path = lib.image(dl["appid"], "header") if lib else None
-        if path:
-            thumb = _thumb(path, 64, 30)
-        if thumb:
-            img.paste(thumb, (8, y + 2))
-        else:
-            d.rectangle((8, y + 2, 71, y + 31), fill=TRACK)
-        x = 78
-        d.text((x, y + 9), fit(d, dl["name"], font(11, True), 150), font=font(11, True),
-               fill=TEXT, anchor="lm")
-        active = dl["state"] == "téléchargement"
-        d.text((W - 12, y + 9), dl["state"], font=font(9, True),
-               fill=STEAM_BLUE if active else MUTED, anchor="rm")
-        frac = dl["done"] / dl["total"] if dl["total"] else 0
-        bar(d, x, y + 19, W - 12 - x - 92, 5, frac, STEAM_BLUE if active else MUTED)
-        info = f"{fmt_size(dl['done'])} / {fmt_size(dl['total'])}" if dl["total"] else ""
-        if dl["rate"] and active:
-            info = f"{dl['rate'] / 2**20:.1f} Mo/s".replace(".", ",") + (f" · {frac * 100:.0f}%"
-                                                                          if dl["total"] else "")
-        d.text((W - 12, y + 22), info, font=font(9), fill=MUTED, anchor="rm")
-        y += 38
-    if len(sl.downloads) > 2:
-        d.text((W - 10, y - 2), f"+{len(sl.downloads) - 2} autres", font=font(9), fill=MUTED,
-               anchor="ra")
-        y += 10
-
-    # amis
-    y += 4
-    friends = sl.friends
-    label = f"AMIS EN LIGNE · {len(friends)}" + (f"/{sl.friends_total}" if sl.friends_total else "")
-    label = label if not sl.friends_status else "AMIS"
-    d.text((10, y + 6), label, font=font(9, True), fill=STEAM_BLUE, anchor="lm")
-    d.line((d.textlength(label, font=font(9, True)) + 18, y + 6, W - 10, y + 6), fill=TRACK)
-    y += 16
-    if sl.friends_status:
-        d.text((12, y + 8), fit(d, sl.friends_status, font(10), W - 24), font=font(10),
-               fill=MUTED, anchor="lm")
-        return
-    if not friends:
-        d.text((12, y + 8), "Aucun ami en ligne", font=font(11), fill=MUTED, anchor="lm")
-        return
-    rows = max(1, (H - 4 - y) // 22)
-    c.steam_scroll = max(0, min(c.steam_scroll, len(friends) - rows))
     cache = c.discord.avatars if c.discord else None
 
-    def friend_row(li, ld, idx, fy):
-        f = friends[idx]
-        color = STEAM_GAME if f["game"] else STEAM_BLUE if f["state"] == "en ligne" else MUTED
-        avatar(li, ld, cache, f["avatar"], 18, fy + 10, 18, f["name"], ring=color)
-        ld.text((34, fy + 10), fit(ld, f["name"], font(11, True), 120), font=font(11, True),
-                fill=TEXT, anchor="lm")
-        status = f["game"] or f["state"]
-        ld.text((W - 10, fy + 10), fit(ld, status, font(10), 150), font=font(10), fill=color,
-                anchor="rm")
-    smooth_rows(img, "steam_scroll", c.steam_scroll, len(friends), y, min(H - 2, y + rows * 22),
-                22, friend_row, t)
-    if len(friends) > rows:
-        key_hints(d, H - 8, [("▲▼", "")], "right", x=W - 4)
+    # --- téléchargements ---
+    y = 28
+    downloads = sl.downloads
+    if not sl.running:
+        panel(d, (6, y, W - 6, y + 20), 5)
+        d.ellipse((13, y + 7, 19, y + 13), fill=MUTED)
+        d.text((26, y + 10), "Steam fermé", font=font(11, True), fill=MUTED, anchor="lm")
+        y += 24
+    elif not downloads:
+        panel(d, (6, y, W - 6, y + 20), 5)
+        d.text((14, y + 10), "✓", font=font(12, True), fill=OK, anchor="lm")
+        d.text((28, y + 10), "Jeux à jour", font=font(11, True), fill=TEXT, anchor="lm")
+        d.text((W - 12, y + 10), "aucun téléchargement", font=font(9), fill=MUTED, anchor="rm")
+        y += 24
+    else:
+        dl = downloads[0]
+        active = dl["state"] == "téléchargement"
+        color = STEAM_BLUE if active else MUTED
+        panel(d, (6, y, W - 6, y + 64), 6)
+        path = lib.image(dl["appid"], "header") if lib else None
+        thumb = _thumb(path, 104, 49) if path else None
+        if thumb:
+            img.paste(thumb, (10, y + 4))
+        else:
+            placeholder_cover(d, (10, y + 4, 113, y + 52), dl["name"])
+        x = 122
+        d.text((x, y + 11), fit(d, dl["name"], font(12, True), W - 12 - x), font=font(12, True),
+               fill=TEXT, anchor="lm")
+        frac = dl["done"] / dl["total"] if dl["total"] else 0
+        if active and dl["rate"]:
+            d.text((x, y + 30), f"{dl['rate'] / 2**20:.1f}".replace(".", ","),
+                   font=font(18, True), fill=color, anchor="lm")
+            rx = x + d.textlength(f"{dl['rate'] / 2**20:.1f}", font=font(18, True)) + 3
+            d.text((rx, y + 33), "Mo/s", font=font(9), fill=MUTED, anchor="lm")
+            left = (dl["total"] - dl["done"]) / dl["rate"] if dl["total"] else None
+            if left:
+                d.text((W - 12, y + 31), f"reste {fmt_eta(left)}", font=font(10, True),
+                       fill=TEXT, anchor="rm")
+        else:
+            d.text((x, y + 30), dl["state"], font=font(12, True), fill=color, anchor="lm")
+        bar(d, x, y + 44, W - 12 - x, 6, frac, color, smooth=True)
+        size = f"{fmt_size(dl['done'])} / {fmt_size(dl['total'])}" if dl["total"] else ""
+        d.text((x, y + 57), size, font=font(9), fill=MUTED, anchor="lm")
+        if dl["total"]:
+            d.text((W - 12, y + 57), f"{frac * 100:.0f} %", font=font(9, True), fill=MUTED,
+                   anchor="rm")
+        y += 68
+        queue = downloads[1:]
+        if queue:
+            names = ", ".join(q["name"] for q in queue)
+            label = f"file d'attente · {len(queue)}"
+            d.text((10, y + 5), label, font=font(9, True), fill=STEAM_BLUE, anchor="lm")
+            lx = 10 + d.textlength(label, font=font(9, True)) + 6
+            d.text((lx, y + 5), fit(d, names, font(9), W - 10 - lx), font=font(9), fill=MUTED,
+                   anchor="lm")
+            y += 13
+
+    # --- amis ---
+    y += 2
+    if sl.friends_status:
+        d.text((10, y + 6), "AMIS", font=font(9, True), fill=STEAM_BLUE, anchor="lm")
+        d.text((W // 2, (y + H) // 2), fit(d, sl.friends_status, font(11), W - 24),
+               font=font(11), fill=MUTED, anchor="mm")
+        return
+    friends = sl.friends
+    playing = [f for f in friends if f["game"]]
+    online = [f for f in friends if not f["game"]]
+    total = f"{len(friends)}" + (f"/{sl.friends_total}" if sl.friends_total else "")
+    if not friends:
+        d.text((10, y + 6), f"AMIS · {total}", font=font(9, True), fill=STEAM_BLUE,
+               anchor="lm")
+        d.text((W // 2, (y + H) // 2), "Aucun ami en ligne", font=font(12, True), fill=MUTED,
+               anchor="mm")
+        return
+
+    def heading(yy, text, color, right=""):
+        d.text((10, yy + 6), text, font=font(9, True), fill=color, anchor="lm")
+        end = W - 10
+        if right:
+            d.text((W - 10, yy + 6), right, font=font(9), fill=MUTED, anchor="rm")
+            end -= d.textlength(right, font=font(9)) + 8
+        d.line((d.textlength(text, font=font(9, True)) + 18, yy + 6, end, yy + 6), fill=TRACK)
+
+    chips_h = 40 if online else 0            # rangée d'avatars des amis en ligne
+    if playing:
+        heading(y, f"EN JEU · {len(playing)}", STEAM_GAME,
+                "" if online else f"amis en ligne {total}")
+        y += 14
+        room = H - 4 - y - (chips_h + 14 if online else 0)
+        rows = max(1, min(len(playing), room // STEAM_GAME_ROW))
+        # peu d'amis en jeu : des lignes un peu plus hautes plutôt qu'un grand vide
+        row_h = max(STEAM_GAME_ROW, min(34, room // rows)) if rows == len(playing)             else STEAM_GAME_ROW
+        c.steam_scroll = max(0, min(c.steam_scroll, len(playing) - rows))
+
+        def game_row(li, ld, idx, fy):
+            f = playing[idx]
+            cy = fy + row_h // 2
+            panel(ld, (6, fy + 1, W - 6, fy + row_h - 1), 5)
+            ld.rounded_rectangle((6, fy + 1, 9, fy + row_h - 1), 2, fill=STEAM_GAME)
+            avatar(li, ld, cache, f["avatar"], 24, cy, 20, f["name"], ring=STEAM_GAME)
+            ld.text((42, cy - 6), fit(ld, f["name"], font(11, True), W - 60),
+                    font=font(11, True), fill=TEXT, anchor="lm")
+            ld.text((42, cy + 7), fit(ld, f["game"], font(10), W - 60), font=font(10),
+                    fill=STEAM_GAME, anchor="lm")
+        smooth_rows(img, "steam_scroll", c.steam_scroll, len(playing), y, y + rows * row_h,
+                    row_h, game_row, t)
+        if len(playing) > rows:
+            key_hints(d, y - 8, [("▲▼", f"{c.steam_scroll + 1}-{c.steam_scroll + rows}"
+                                         f"/{len(playing)}")], "right")
+        y += rows * row_h + 2
+    if online:
+        heading(y, f"EN LIGNE · {len(online)}", STEAM_BLUE,
+                "" if playing else f"amis en ligne {total}")
+        y += 14
+        per = 6
+        shown = online[:per] if len(online) <= per else online[:per - 1]
+        for k, f in enumerate(shown):
+            cx = 30 + k * 52
+            away = f["state"] != "en ligne"
+            avatar(img, d, cache, f["avatar"], cx, y + 11, 20, f["name"],
+                   ring=MUTED if away else STEAM_BLUE)
+            d.text((cx, y + 29), fit(d, f["name"], font(9), 50), font=font(9),
+                   fill=MUTED if away else TEXT, anchor="mm")
+        if len(online) > len(shown):
+            cx = 30 + len(shown) * 52
+            d.ellipse((cx - 11, y, cx + 11, y + 22), fill=TRACK)
+            d.text((cx, y + 11), f"+{len(online) - len(shown)}", font=font(10, True),
+                   fill=TEXT, anchor="mm")
 
 
 AUDIO_APPS_VISIBLE = 4

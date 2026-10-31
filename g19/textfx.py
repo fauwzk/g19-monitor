@@ -1,5 +1,6 @@
-"""Caractères absents de la police : émojis (en couleur, police Segoe UI Emoji) et symboles
-(Segoe UI Symbol) pris dans une police de secours, caractère par caractère. S'installe sur
+"""Caractères absents de la police : émojis (en couleur, police Segoe UI Emoji), symboles
+(Segoe UI Symbol) et autres écritures (japonais, chinois, coréen, thaï…, polices de Windows)
+pris dans une police de secours, caractère par caractère. S'installe sur
 ImageDraw (text et textlength), donc vaut pour tout le dessin de l'appli sans toucher aux pages.
 
 Sans moteur de mise en forme (raqm), les séquences composées d'émojis ne se combinent pas : on
@@ -10,6 +11,17 @@ from PIL import ImageDraw, ImageFont
 
 EMOJI_FONT = r"C:\Windows\Fonts\seguiemj.ttf"
 SYMBOL_FONT = r"C:\Windows\Fonts\seguisym.ttf"
+FONTS_DIR = "C:\\Windows\\Fonts\\"
+# autres écritures, dans l'ordre d'essai : (nom, police normale, police grasse)
+SCRIPTS = (("yugothic", "YuGothM.ttc", "YuGothB.ttc"),       # japonais (kana et kanji)
+           ("yahei", "msyh.ttc", "msyhbd.ttc"),              # chinois simplifié
+           ("jhenghei", "msjh.ttc", "msjhbd.ttc"),           # chinois traditionnel
+           ("malgun", "malgun.ttf", "malgunbd.ttf"),         # coréen
+           ("nirmala", "Nirmala.ttc", "Nirmala.ttc"),        # écritures de l'Inde
+           ("leelawadee", "LeelawUI.ttf", "LeelawUI.ttf"),   # thaï, lao, khmer
+           ("ebrima", "ebrima.ttf", "ebrimabd.ttf"),         # écritures africaines
+           ("historic", "seguihis.ttf", "seguihis.ttf"),     # runes, gotique…
+           ("cambria", "cambria.ttc", "cambriab.ttf"))       # lettres mathématiques 𝓐 𝕏
 EMOJI_SCALE = 0.95          # les émojis sont plus larges que le texte à taille égale
 ZWJ = 0x200D
 SKIP = {0xFE0E, 0xFE0F, 0x20E3} | set(range(0x1F3FB, 0x1F400))   # variantes, teintes de peau
@@ -30,14 +42,29 @@ def _cmap(path):
         return None
 
 
-@lru_cache(maxsize=64)
-def _fallback(kind, size):
+@lru_cache(maxsize=128)
+def _fallback(kind, size, bold=False):
     try:
         if kind == "emoji":
             return ImageFont.truetype(EMOJI_FONT, max(6, round(size * EMOJI_SCALE)))
-        return ImageFont.truetype(SYMBOL_FONT, size)
+        if kind == "symbol":
+            return ImageFont.truetype(SYMBOL_FONT, size)
+        for name, regular, heavy in SCRIPTS:
+            if name == kind:
+                return ImageFont.truetype(FONTS_DIR + (heavy if bold else regular), size)
     except OSError:
-        return None
+        pass
+    return None
+
+
+@lru_cache(maxsize=4096)
+def _script_of(cp):
+    """Police d'écriture qui a ce caractère (cmaps lues seulement au besoin), ou None."""
+    for name, regular, _heavy in SCRIPTS:
+        cmap = _cmap(FONTS_DIR + regular)
+        if cmap and cp in cmap:
+            return name
+    return None
 
 
 def clean(text):
@@ -72,7 +99,8 @@ def _runs(text, path, size):
         elif symbol and cp in symbol:
             kind = "symbol"
         else:
-            kind = "main"             # nulle part : la police principale dessine son carré
+            # autre écriture, sinon nulle part : la police principale dessine son carré
+            kind = _script_of(cp) or "main"
         if runs and runs[-1][1] == kind:
             runs[-1] = (runs[-1][0] + ch, kind)
         else:
@@ -93,8 +121,15 @@ def _split(text, font):
     return runs
 
 
+def _bold(font):
+    try:
+        return "bold" in font.getname()[1].lower()
+    except (AttributeError, IndexError, TypeError):
+        return False
+
+
 def _font_of(kind, font):
-    return font if kind == "main" else (_fallback(kind, font.size) or font)
+    return font if kind == "main" else (_fallback(kind, font.size, _bold(font)) or font)
 
 
 def textlength(self, text, font=None, *args, **kwargs):
