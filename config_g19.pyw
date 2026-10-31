@@ -496,6 +496,9 @@ class ConfigApp(QMainWindow):
                  "Passe le G19 à la page suivante avec l'animation choisie.")
         self.fields["animation_style"] = bind_combo(style, "slide")
         self.fields["animation_speed"] = bind_combo(speed, "normal")
+        self.toggle("headset_mic", card, "Micro du casque dans la barre du haut",
+                    "Casque HyperX sans fil : micro barré en rouge quand tu l'as coupé avec le "
+                    "bouton du casque.")
         self.spin("fps", card, "Images par seconde", 2, 60,
                   hint="Jusqu'à 60. Une page fixe ne coûte presque rien ; la fluidité réelle "
                        "s'affiche dans le menu du G19.")

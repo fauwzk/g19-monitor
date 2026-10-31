@@ -5,10 +5,11 @@ HyperX Cloud III S Wireless (HP 03F0:02CC / 06BE) : protocole décodé à partir
 NGENUITY (projet HyperHeadset, puis HaloBattery). Une demande de *lecture* en rapport de
 sortie 0x0C sur l'interface 3 :
     0c 02 03 01 00 <cmd> 00…     (octet 3 = 01 : lire ; jamais 00, qui écrirait un réglage)
-    cmd 0x06 batterie (%), 0x48 charge (0 non, 1 en charge, 2 chargé)
+    cmd 0x06 batterie (%), 0x48 charge (0 non, 1 en charge, 2 chargé), 0x04 micro coupé
 réponse en rapport d'entrée 0x0C : octet 5 = cmd, octet 6 = valeur (0xFF : pas de valeur,
 casque éteint ou hors de portée). Le casque envoie aussi de lui-même des notifications 0x0D :
-octet 4 = 1 → batterie en octet 5, octet 4 = 10 → état de charge en octet 5.
+octet 4 = 1 → batterie en octet 5, 3 → micro coupé (1) ou non, 10 → état de charge,
+12 → casque relié au dongle (1) ou non.
 Windows découpe l'interface en plusieurs collections : la demande part vers la première qui
 accepte le rapport 0x0C, la réponse peut arriver sur une autre, on les lit toutes."""
 import threading
@@ -22,7 +23,7 @@ except ImportError:
 VID = 0x03F0
 MODELS = {0x02CC: "HyperX Cloud III S", 0x06BE: "HyperX Cloud III S"}
 REPORT, NOTE = 0x0C, 0x0D
-CMD_BATTERY, CMD_CHARGING = 0x06, 0x48
+CMD_BATTERY, CMD_CHARGING, CMD_MUTE = 0x06, 0x48, 0x04
 EVERY = 60               # s entre deux demandes ; les notifications arrivent entre-temps
 WAIT = 1.5               # s d'attente d'une réponse
 
@@ -35,16 +36,22 @@ def parse(r):
     """Rapport d'entrée → ("battery", %) ou ("charging", état), sinon None."""
     if not r or len(r) < 7:
         return None
-    if r[0] == REPORT and r[5] in (CMD_BATTERY, CMD_CHARGING):
+    if r[0] == REPORT and r[5] in (CMD_BATTERY, CMD_CHARGING, CMD_MUTE):
         v = r[6]
         if r[5] == CMD_BATTERY:
             return ("battery", v) if v <= 100 else ("off", None)
+        if r[5] == CMD_MUTE:
+            return ("mute", v == 1) if v != 0xFF else ("off", None)
         return ("charging", v) if v != 0xFF else ("off", None)
     if r[0] == NOTE:
         if r[4] == 1 and r[5] <= 100:
             return "battery", r[5]
+        if r[4] == 3:
+            return "mute", r[5] == 1          # bouton du micro du casque
         if r[4] == 10:
             return "charging", r[5]
+        if r[4] == 12:
+            return ("link", True) if r[5] == 1 else ("off", None)
     return None
 
 
@@ -54,6 +61,7 @@ class HyperXBattery:
         self.level = None
         self.charging = None
         self.connected = False    # casque allumé et relié au dongle
+        self.mic_muted = None     # micro coupé par le bouton du casque (None : inconnu)
         self.on_change = on_change
         self._handles = []
         self._writer = None
@@ -124,14 +132,19 @@ class HyperXBattery:
         return False
 
     def _apply(self, kind, value):
-        before = (self.level, self.charging, self.connected)
+        before = (self.level, self.charging, self.connected, self.mic_muted)
         if kind == "off":
             self.connected = False
+        elif kind == "link":
+            self.connected = True
+        elif kind == "mute":
+            self.mic_muted, self.connected = bool(value), True
         elif kind == "battery":
             self.level, self.connected = value, True
         elif kind == "charging":
             self.charging = value
-        if before != (self.level, self.charging, self.connected) and self.on_change:
+        if before != (self.level, self.charging, self.connected, self.mic_muted) \
+                and self.on_change:
             self.on_change()
 
     def _run(self):
@@ -143,7 +156,8 @@ class HyperXBattery:
                     time.sleep(30)          # dongle débranché : on regarde de temps en temps
                     continue
                 while True:
-                    for cmd, kind in ((CMD_BATTERY, "battery"), (CMD_CHARGING, "charging")):
+                    for cmd, kind in ((CMD_BATTERY, "battery"), (CMD_CHARGING, "charging"),
+                                      (CMD_MUTE, "mute")):
                         if self._send(cmd) and not self._drain(time.time() + WAIT, kind)                                 and kind == "battery":
                             self._apply("off", None)    # pas de réponse : casque éteint
                     self._drain(time.time() + EVERY)     # notifications entre deux demandes

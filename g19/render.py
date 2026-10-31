@@ -879,7 +879,7 @@ def claude_icon(d, cx, cy, size, color, spin=0.0):
 
 
 def header(d, index, count, sessions, t, discord=None, alerts=None, title="", done_s=0,
-           streaming=None):
+           streaming=None, headset=None):
     title_bar(d)
     lt = time.localtime(t)
     d.text((8, 12), time.strftime("%H:%M", lt), font=font(17, True), fill=HEAD_TEXT, anchor="lm")
@@ -890,6 +890,8 @@ def header(d, index, count, sessions, t, discord=None, alerts=None, title="", do
     x = 67 + d.textlength(label, font=font(12, True)) + 6
     if count > 1:
         d.text((x, 13), f"{index + 1}/{count}", font=font(9), fill=HEAD_MUTED, anchor="lm")
+        x += d.textlength(f"{index + 1}/{count}", font=font(9))
+    left_end = x + 6        # fin du titre : les icônes de droite ne doivent pas l'atteindre
 
     # voyant Claude : un point + compteur par état, de droite à gauche (masqué si `sessions`
     # vaut None, c.-à-d. Claude fermé). Un agent fini passe au repos (gris) après done_s.
@@ -944,6 +946,31 @@ def header(d, index, count, sessions, t, discord=None, alerts=None, title="", do
             if mute and not deaf:
                 mic_icon(d, x - 13, 12, True, HOT)   # micro barré, bien à gauche du casque
                 x -= 18
+
+    # casque HyperX : micro (barré en rouge quand le bouton du casque le coupe) et batterie
+    if headset is not None and headset.connected:
+        if headset.mic_muted is not None:
+            x -= 6
+            if headset.mic_muted:
+                mic_icon(d, x - 12, 12, True, HOT)
+            else:
+                mic_icon(d, x - 12, 12, False, dim(HEAD_TEXT, 0.7))
+            x -= 16
+        if headset.level is not None and x - 50 > left_end:   # place pour « 92 » + la pile
+            lvl = headset.level
+            charging = headset.charging in (1, 2)
+            color = OK if charging or lvl > 50 else WARN if lvl > 20 else HOT
+            x -= 4
+            # petite pile : contour, téton, remplissage selon le niveau
+            d.rounded_rectangle((x - 17, 8, x - 3, 16), 2, outline=dim(HEAD_TEXT, 0.8), width=1)
+            d.rectangle((x - 2, 10, x - 1, 14), fill=dim(HEAD_TEXT, 0.8))
+            fw = int(11 * max(0, min(lvl, 100)) / 100)
+            if fw > 0:
+                d.rectangle((x - 15, 10, x - 15 + fw, 14), fill=color)
+            label = f"{lvl}" + ("+" if charging else "")
+            d.text((x - 20, 12), label, font=font(10, True),
+                   fill=color if lvl <= 20 and not charging else HEAD_TEXT, anchor="rm")
+            x -= 22 + d.textlength(label, font=font(10, True))
 
     if alerts and alerts.active:
         x -= 8
@@ -3132,7 +3159,9 @@ def render(page, c, t=None, post=True):
         title = "Paroles"
     header(d, pages.index(page) if page in pages else 0, len(pages),
            c.sessions if c.claude_open else None, t, c.discord, c.alerts, title,
-           c.settings.get("claude_strip_seconds", 10), c.streaming)
+           c.settings.get("claude_strip_seconds", 10), c.streaming,
+           c.batteries.hyperx if c.batteries and getattr(c.batteries, "hyperx", None)
+           and c.settings.get("headset_mic", True) else None)
     if c.alerts and c.alerts.active and (t * 2) % 2 < 1.4:
         d.rectangle((0, 0, W - 1, H - 1), outline=HOT, width=2)  # cadre rouge clignotant
 
