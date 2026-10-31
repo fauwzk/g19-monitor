@@ -6,7 +6,9 @@ Ne jamais publier de captures faites avec les vraies données (comptes, amis, po
 """
 import io
 import math
+import queue
 import sys
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -152,7 +154,165 @@ def demo_ctx():
                            {"name": "Manette", "level": 18, "connected": True},
                            {"name": "Souris", "level": 55, "connected": False}]
     c.batteries.status = ""
+    demo_extras(c, t)
+    # copies figées : les vrais modules continuent de tourner en tâche de fond et
+    # écraseraient les données inventées pendant la génération (Discord, Steam, Docker…)
+    for name in ("discord", "steam", "docker", "batteries", "away", "streaming", "alerts"):
+        obj = getattr(c, name, None)
+        if obj is not None and not isinstance(obj, NS):
+            frozen = obj.__class__.__new__(obj.__class__)
+            frozen.__dict__.update({k: (list(v) if isinstance(v, list) else
+                                        deque(v, v.maxlen) if isinstance(v, deque) else v)
+                                    for k, v in obj.__dict__.items()})
+            setattr(c, name, frozen)
     return c
+
+
+def demo_extras(c, t):
+    """Données inventées pour les autres écrans : rien de ce PC (audio, VPN, météo, réseau,
+    usage Claude, carburant…) ne doit se retrouver sur une capture publique."""
+    from g19.lyrics import parse_lrc
+    from g19.netping import Pinger
+    from g19.volume import VolumeMonitor
+    from g19.weather import WeatherMonitor
+
+    # audio : sorties, micro et applis inventés (sans le fil audio qui relirait les vrais)
+    v = VolumeMonitor.__new__(VolumeMonitor)
+    v.__dict__.update(
+        device="Haut-parleurs", level=0.62, muted=False, peak=0.45,
+        apps={"spotify": 1.0, "discord": 0.8, "firefox": 0.55},
+        outputs=[("o1", "Haut-parleurs"), ("o2", "Casque sans fil")], out_id="o1",
+        inputs=[("i1", "Micro du casque")], in_id="i1", mic_level=0.8, mic_muted=False,
+        mic_peak=0.15, mic_device="Micro du casque", error="", changed_at=0.0,
+        mic_changed_at=0.0, changes=queue.Queue(), profile_events=queue.Queue(),
+        wake=threading.Event(), _live={}, _cmds=queue.Queue(),
+        sessions=[{"key": n, "name": n, "system": s, "volume": vo, "muted": False, "peak": p}
+                  for n, s, vo, p in (("Spotify", False, 1.0, 0.6), ("Discord", False, 0.8, 0.2),
+                                      ("Firefox", False, 0.55, 0.0),
+                                      ("Sons système", True, 0.7, 0.0))])
+    c.volume = v
+    c.batteries.hyperx = NS(name="Casque sans fil", level=72, charging=0, connected=True,
+                            mic_muted=False, mic_changed_at=0.0)
+
+    c.usage = NS(ready=True, block_reset=t + 2.3 * 3600, block_tokens=1.24e6,
+                 block_messages=84, week_tokens=18.6e6)
+    c.notifs = NS(status="ok", last_time=0, items=[
+        {"app": "WhatsApp", "title": "Léa", "body": "on se retrouve à 20 h ?", "icon": None,
+         "time": t - 90},
+        {"app": "Outlook", "title": "Réunion d'équipe", "body": "demain 10 h · salle 2",
+         "icon": None, "time": t - 1500},
+        {"app": "Paramètres", "title": "Mises à jour", "body": "redémarrage prévu cette nuit",
+         "icon": None, "time": t - 7200}], clear=lambda: None)
+    c.dnd = NS(supported=True, active=False, event=None, toggle=lambda: None)
+
+    c.speedtest = NS(phase="done", running=False, live=0.0, progress=1.0, ping=11.8, jitter=1.4,
+                     down=938.0, up=612.0, peak=972.0, error="", server="Démo",
+                     history=[{"time": t - k * 86400, "ping": 11 + k, "jitter": 1.2,
+                               "down": 940 - 30 * k, "up": 610 - 12 * k, "server": "Démo"}
+                              for k in range(5)])
+    c.vpn = NS(installed=True, busy=False, message="",
+               ts={"state": "Running", "running": True, "host": "pc-salon",
+                   "ip": "100.64.0.12", "tailnet": "demo.ts.net", "exit": None, "online": 2,
+                   "health": [],
+                   "peers": [{"name": n, "os": o, "online": on, "ip": ip, "direct": dr,
+                              "active": ac, "seen": se}
+                             for n, o, on, ip, dr, ac, se in (
+                                 ("nas", "linux", True, "100.64.0.2", True, True, 0),
+                                 ("portable", "windows", True, "100.64.0.7", False, False, 0),
+                                 ("telephone", "android", False, "100.64.0.9", False, False,
+                                  3 * 3600))]},
+               adapters=[{"name": "Tailscale", "up": True, "ip": "100.64.0.12", "rx": 0, "tx": 0},
+                         {"name": "WireGuard", "up": False, "ip": "", "rx": 0, "tx": 0}],
+               public={"ip": "203.0.113.42", "city": "Lyon", "isp": "Fibre démo"})
+
+    # météo inventée (pas celle de l'endroit où se trouve ce PC)
+    w = WeatherMonitor.__new__(WeatherMonitor)
+    h0 = int(t // 3600) * 3600
+    day0 = int(t // 86400) * 86400
+    w.__dict__.update(place={"name": "Lyon", "ip": False}, status="ok", event=None, updated=t,
+                      data={"current": {"temperature_2m": 17.4, "apparent_temperature": 16.1,
+                                        "weather_code": 2, "is_day": 1, "wind_speed_10m": 14.0,
+                                        "wind_direction_10m": 250, "relative_humidity_2m": 58},
+                            "hourly": {"time": [h0 + k * 3600 for k in range(24)],
+                                       "temperature_2m": [17 + 3 * math.sin(k / 4) for k in range(24)],
+                                       "precipitation_probability": [5, 5, 10, 20, 40, 60, 35, 15] * 3,
+                                       "weather_code": [2, 2, 3, 3, 61, 61, 3, 1] * 3,
+                                       "is_day": [1] * 6 + [0] * 12 + [1] * 6},
+                            "daily": {"time": [day0 + k * 86400 for k in range(5)],
+                                      "weather_code": [2, 61, 3, 0, 1],
+                                      "temperature_2m_max": [19, 16, 18, 22, 21],
+                                      "temperature_2m_min": [9, 10, 8, 11, 12],
+                                      "precipitation_probability_max": [10, 70, 30, 0, 5],
+                                      "sunrise": [day0 + k * 86400 + 7 * 3600 for k in range(5)],
+                                      "sunset": [day0 + k * 86400 + 19 * 3600 for k in range(5)]}})
+    c.weather = w
+
+    p = Pinger.__new__(Pinger)
+    p.__dict__.update(target="1.1.1.1", status="", event=None, _alerted=0.0,
+                      samples=deque([(None if k in (37, 38) else
+                                      14 + 3 * math.sin(k / 5) + (22 if k % 29 == 0 else 0))
+                                     for k in range(100)]))
+    c.net = p
+
+    def fuel(price, out=False):
+        return {"price": price, "out": out, "shortage": None, "updated": None, "age": 0}
+    c.fuel = NS(status="", event=None, stations={
+        "1": {"name": "Station du Centre", "short": "Centre", "city": "Lyon", "brand": "Démo",
+              "fuels": {"Gazole": fuel(1.689), "E10": fuel(1.759), "SP98": fuel(1.849)}},
+        "2": {"name": "Relais des Quais", "short": "Quais", "city": "Lyon", "brand": "Démo",
+              "fuels": {"Gazole": fuel(1.672), "E10": fuel(None, True), "SP98": fuel(1.869)}},
+        "3": {"name": "Aire de la Colline", "short": "Colline", "city": "Écully", "brand": "Démo",
+              "fuels": {"Gazole": fuel(1.701), "E10": fuel(1.749), "E85": fuel(0.899)}}})
+
+    c.toast_log = deque([
+        {"source": "Discord", "title": "Léa · #général", "body": "on lance la partie à 21h ? 🎮",
+         "page": "discord", "at": t - 120, "icon": None, "color": [88, 101, 242]},
+        {"source": "Claude", "title": "g19-monitor", "body": "attend ta réponse", "page": "claude",
+         "at": t - 900, "icon": None, "color": [217, 119, 87]},
+        {"source": "Steam", "title": "Rally Horizon", "body": "téléchargement terminé",
+         "page": "steam", "at": t - 2400, "icon": None, "color": [102, 192, 244]},
+        {"source": "Météo", "title": "Pluie dans ~20 min", "body": "1,2 mm en 15 min · Lyon",
+         "page": "weather", "at": t - 5400, "icon": None, "color": None}])
+
+    # recopie d'écran : un bureau dessiné ici
+    desk = Image.new("RGB", (320, 180), (24, 60, 110))
+    dd = ImageDraw.Draw(desk)
+    for y in range(180):
+        dd.line((0, y, 320, y), fill=(20 + y // 6, 50 + y // 5, 110 + y // 4))
+    dd.rectangle((40, 24, 230, 140), fill=(245, 245, 248), outline=(90, 90, 100))
+    dd.rectangle((40, 24, 230, 36), fill=(60, 90, 160))
+    for k in range(6):
+        dd.rectangle((52, 46 + k * 14, 52 + 40 + (k * 37) % 120, 52 + k * 14), fill=(170, 175, 190))
+    dd.rectangle((0, 168, 320, 180), fill=(30, 30, 38))
+    c.mirror = NS(frame=desk, status="", label="Écran 1 · 2560×1440", cursor=(150, 90),
+                  want=lambda: None)
+
+    lines = ["Les néons s'allument sur la ville", "On roule sans savoir où l'on va",
+             "La nuit dessine des lignes", "Et la radio chante tout bas",
+             "Horizon violet, moteur qui gronde", "Encore un virage avant l'aube"]
+    lrc = "\n".join(f"[01:{10 + 5 * k:02d}.00]{line}" for k, line in enumerate(lines))
+    data = {"synced": parse_lrc(lrc), "plain": lines, "instrumental": False}
+    c.lyrics = NS(get=lambda m: data)
+
+    # 24 h d'historique et ventilateurs inventés (le dossier de données des captures est vide)
+    from g19.history import History
+    h = History.__new__(History)
+    start = int(t // 60) * 60 - 24 * 3600
+    h.__dict__.update(_acc={}, _minute=None, _saved=t, points=[
+        {"t": start + k * 60, "cpu": round(25 + 20 * math.sin(k / 90) + (40 if 900 < k < 1060 else 0), 1),
+         "gpu": round(10 + (85 if 900 < k < 1060 else 5 * math.sin(k / 50)), 1),
+         "cpu_t": round(48 + 10 * math.sin(k / 90) + (22 if 900 < k < 1060 else 0), 1),
+         "gpu_t": round(40 + (34 if 900 < k < 1060 else 4 * math.sin(k / 70)), 1)}
+        for k in range(24 * 60)])
+    c.history = h
+    c.fans = NS(error="", applied="auto", event=None, readings=[
+        {"id": f"/lpc/fan/{k}", "name": n, "rpm": r, "pump": False, "gpu": g, "control": None,
+         "pct": p}
+        for k, (n, r, g, p) in enumerate((("CPU Fan", 1180, False, 46), ("System Fan #1", 920, False, 38),
+                                          ("System Fan #2", 905, False, 38),
+                                          ("System Fan #3", 0, False, None),
+                                          ("GPU Fan", 1420, True, 41)))])
+    c.steam.root, c.steam.running = "C:/Steam", True
 
 
 def fake_games(c, t):
@@ -172,6 +332,134 @@ def fake_games(c, t):
     return recs
 
 
+GALLERY = ROOT / "docs" / "images" / "themes"
+GALLERY_COLS = 4
+
+
+def screens(c, t, recs, pages):
+    """[(libellé, image 320×240)] : tous les écrans du G19 dans le thème réglé dans c."""
+    from g19.games import Session as GameSession
+
+    out = []
+
+    def add(label, img):
+        out.append((label, img))
+
+    def page(label, p, **attrs):
+        saved = {k: getattr(c, k) for k in attrs}
+        for k, v in attrs.items():
+            setattr(c, k, v)
+        try:
+            add(label, render.render(p, c, t))
+        finally:
+            for k, v in saved.items():
+                setattr(c, k, v)
+
+    page("Système", "system")
+    page("GPU en jeu", "gpu")
+    s = GameSession({"path": "demo0.exe", "name": "StarfieldTactics.exe", "pid": 1},
+                    {"name": "Starfield Tactics", "launcher": "Steam"}, t - 47 * 60)
+    s.last_seen, s.fps = t, [130 + 12 * math.sin(k / 6) for k in range(300)]
+    s.temp_max, s.power_sum, s.power_n = 78, 268 * 300, 300
+    c.games.session = s
+    page("Jeux · en cours", "games")
+    c.games.session = None
+    page("Jeux · derniers jeux", "games")
+    page("Steam", "steam")
+    page("Média", "media")
+    page("Média · paroles", "media", show_lyrics=True)
+    page("Audio", "audio")
+    page("Discord", "discord")
+    page("Notifications", "notifs")
+    c.dnd.active = True
+    page("Notifications · ne pas déranger", "notifs")
+    c.dnd.active = False
+    page("Débit · résultat", "speedtest")
+    sp = c.speedtest
+    page("Débit · en cours", "speedtest",
+         speedtest=NS(**{**sp.__dict__, "phase": "download", "running": True, "live": 712.0,
+                         "progress": 0.62, "down": None, "up": None, "peak": 760.0}))
+    page("Météo", "weather")
+    page("VPN", "vpn")
+    page("Claude Code", "claude")
+    page("Cœurs du CPU", "cores")
+    page("Historique", "history")
+    page("Batteries", "batteries")
+    page("Réseau", "network")
+    page("Docker", "docker")
+    page("Carburant", "fuel")
+    page("Historique des bandeaux", "toasts")
+    page("Recopie d'écran", "screen")
+
+    # par-dessus les pages
+    dc = c.discord
+    dc.last_notification = t - 1.2
+    page("Bandeau (OK ouvre, Annuler ferme)", "system")
+    dc.last_notification = t - 3600
+    c.volume.changed_at = t - 0.6
+    add("Fenêtre de volume", render.volume_popup(render.render("media", c, t), c, t))
+    c.volume.changed_at = 0.0
+    c.volume.mic_changed_at, c.volume.mic_muted = t - 0.6, True
+    add("Fenêtre du micro", render.volume_popup(render.render("system", c, t), c, t))
+    c.volume.mic_changed_at, c.volume.mic_muted = 0.0, False
+
+    menu = SettingsMenu()
+    menu.show(c.settings, m.page_action("system", c))
+    add("Réglages (touche Menu)", render.render_menu(menu, c, t))
+    for style, label in (("coverflow", "Carrousel"), ("flat", "Écrans à plat"),
+                         ("grid", "Grille des écrans"), ("list", "Liste des écrans")):
+        cov = Coverflow()
+        cov.show(pages, "media", style)
+        tt = t
+        for _ in range(40):
+            img = cov.render(c, tt, lambda: m.settings_preview(c, "media"))
+            tt += 0.05
+        add(f"{label} (touche Menu)", img)
+    add("Ventilateurs", render.render_fans(0, c, t))
+    add("Fin de partie", render.render_recap(c, recs[0], t, t))
+    aw = Away()
+    aw.since, aw.locked = t - 3 * 3600, True
+    aw.items = [{"source": "Discord", "title": "Léa", "body": "on lance la partie à 21h ? 🎮",
+                 "icon": None, "color": "discord", "at": t - 5000},
+                {"source": "Claude", "title": "g19-monitor", "body": "a fini", "icon": None,
+                 "color": "claude", "at": t - 4000},
+                {"source": "Steam", "title": "Rally Horizon", "body": "téléchargement terminé",
+                 "icon": None, "color": "steam", "at": t - 3000}]
+    c.away = aw
+    add("PC au repos", render.render_idle(c, t))
+    add("Au retour", render.render_away(c, (aw.items, aw.since, t, t), t))
+    c.away = None
+    add("Démarrage", render.render_splash(1.0, "prêt", t, c.settings["theme"]))
+    return out
+
+
+def gallery(c, t, recs):
+    """Une planche par thème avec tous les écrans (docs/images/themes/<thème>.png)."""
+    GALLERY.mkdir(parents=True, exist_ok=True)
+    pages = list(settings.PAGE_TITLES)
+    base = settings.load_defaults()
+    title_f, label_f = render.font(20, True), render.font(12, True)
+    names = []
+    for th in render.THEMES:
+        # sans animations : chaque écran figé dans son état final (pas de fondu en cours)
+        c.settings = {**base, "theme": th, "wallpaper_bg": False, "pages": pages,
+                      "animations": False}
+        c.pages = pages
+        shots = screens(c, t, recs, pages)
+        rows = (len(shots) + GALLERY_COLS - 1) // GALLERY_COLS
+        sheet = Image.new("RGB", (GALLERY_COLS * 336 + 16, 48 + rows * 264), (246, 247, 249))
+        d = ImageDraw.Draw(sheet)
+        d.text((16, 14), f"Thème {render.THEME_LABELS[th]}", font=title_f, fill=(25, 28, 35))
+        for k, (label, img) in enumerate(shots):
+            x, y = 16 + (k % GALLERY_COLS) * 336, 48 + (k // GALLERY_COLS) * 264
+            d.text((x, y), label, font=label_f, fill=(60, 64, 75))
+            sheet.paste(img.convert("RGB"), (x, y + 18))
+            d.rectangle((x - 1, y + 17, x + 320, y + 258), outline=(200, 204, 212))
+        sheet.save(GALLERY / f"{th}.png", optimize=True)
+        names.append(th)
+    return names, [label for label, _ in shots]
+
+
 def shot(name, img):
     img.resize((img.width * SCALE, img.height * SCALE), Image.NEAREST).save(OUT / f"{name}.png")
 
@@ -182,7 +470,7 @@ def main():
     recs = fake_games(c, t)
     pages = ["system", "gpu", "media", "audio", "discord", "steam", "claude", "weather",
              "history", "network", "docker", "games", "cores", "batteries"]
-    base = settings.load()
+    base = settings.load_defaults()       # pas les réglages de ce PC (villes, profils…)
     c.settings = {**base, "theme": "g19", "wallpaper_bg": False, "pages": pages}
     for p in pages:
         shot(p, render.render(p, c, t))
@@ -231,6 +519,9 @@ def main():
         c.settings = {**base, "theme": th, "pages": pages}
         hero.paste(render.render(p, c, t).resize((640, 480), Image.NEAREST), (k * 664, 0))
     hero.save(OUT / "hero.png")
+
+    themes, labels = gallery(c, t, recs)
+    print(f"galerie : {len(themes)} thèmes × {len(labels)} écrans dans {GALLERY}")
     print("captures :", OUT)
 
 

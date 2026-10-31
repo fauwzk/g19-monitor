@@ -10,8 +10,8 @@ thèmes, un menu au clavier et un utilitaire de réglages. Windows, Python.
 
 ## Sommaire
 
-- [Aperçu](#aperçu) · [Thèmes](#thèmes) · [Installation](#installation) ·
-  [Mises à jour](#mises-à-jour-automatiques) · [Utilisation](#utilisation) ·
+- [Aperçu](#aperçu) · [Thèmes](#thèmes) · [Galerie complète](#galerie-complète) ·
+  [Installation](#installation) · [Mises à jour](#mises-à-jour-automatiques) · [Utilisation](#utilisation) ·
   [Pages](#pages-en-détail) · [Fonctions](#fonctions) · [Sources](#sources-et-prérequis) ·
   [Développement](#développement)
 
@@ -57,19 +57,170 @@ bandeau.
 
 ## Thèmes
 
-Dix-neuf thèmes, au choix dans le menu du G19 ou l’utilitaire (qui prend les mêmes couleurs).
+Vingt thèmes, au choix dans le menu du G19 ou l’utilitaire (qui prend les mêmes couleurs).
 Certains ne changent que les couleurs ; d'autres changent la forme des éléments : panneaux
 vernis et LED du **G19 (origine)**, verre d'**Aero**, aiguilles des **Cadrans analogiques**,
 coins de cadre du **HUD cockpit**, contours lumineux de **Tron**, hachures des **Papiers**,
-blocs du **Pixel 8 bits**, barre de titre bleue et barres de progression de **Windows XP**.
+blocs du **Pixel 8 bits**, barre de titre bleue et barres de progression de **Windows XP**,
+dégradés et panneaux arrondis de **Nokia / Symbian**.
 
-![Les 19 thèmes sur la page GPU](docs/images/themes.png)
+![Les 20 thèmes sur la page GPU](docs/images/themes.png)
 
 - **Fond d'écran** : en option dans tous les thèmes, le fond d'écran Windows flouté derrière
   les pages, chaque thème gardant son style (panneaux légèrement translucides).
 - **Mode nuit** : écran assombri et thème imposé entre deux heures (le thème **Rouge nuit**
   n'éblouit pas).
 - **Émojis** en couleur partout (messages, titres, pseudos).
+
+## Galerie complète
+
+Tous les écrans du G19, thème par thème (20 thèmes × 37 écrans) : Système, GPU en jeu, Jeux (en
+cours et derniers jeux), Steam, Média, paroles, Audio, Discord, Notifications (et « Ne pas
+déranger »), Débit (résultat et test en cours), Météo, VPN, Claude Code, Cœurs du CPU,
+Historique, Batteries, Réseau, Docker, Carburant, historique des bandeaux, recopie d'écran ;
+par-dessus les pages : bandeau, fenêtres de volume et du micro ; réglages, les quatre listes
+d'écrans de la touche Menu (carrousel, à plat, grille, liste), ventilateurs, fin de partie, PC
+au repos, résumé au retour et démarrage. Clique sur un thème pour l'ouvrir.
+
+<details>
+<summary><b>Sombre</b></summary>
+
+![Tous les écrans dans le thème Sombre](docs/images/themes/dark.png)
+
+</details>
+
+<details>
+<summary><b>Clair</b></summary>
+
+![Tous les écrans dans le thème Clair](docs/images/themes/light.png)
+
+</details>
+
+<details open>
+<summary><b>G19 (origine)</b></summary>
+
+![Tous les écrans dans le thème G19 (origine)](docs/images/themes/g19.png)
+
+</details>
+
+<details>
+<summary><b>Rétro G15</b></summary>
+
+![Tous les écrans dans le thème Rétro G15](docs/images/themes/g15.png)
+
+</details>
+
+<details>
+<summary><b>Néon</b></summary>
+
+![Tous les écrans dans le thème Néon](docs/images/themes/neon.png)
+
+</details>
+
+<details>
+<summary><b>Dynamique (pochette)</b></summary>
+
+![Tous les écrans dans le thème Dynamique (pochette)](docs/images/themes/dynamic.png)
+
+</details>
+
+<details>
+<summary><b>Haut contraste</b></summary>
+
+![Tous les écrans dans le thème Haut contraste](docs/images/themes/contrast.png)
+
+</details>
+
+<details>
+<summary><b>Glacier</b></summary>
+
+![Tous les écrans dans le thème Glacier](docs/images/themes/glacier.png)
+
+</details>
+
+<details>
+<summary><b>Braise</b></summary>
+
+![Tous les écrans dans le thème Braise](docs/images/themes/braise.png)
+
+</details>
+
+<details>
+<summary><b>Terminal (phosphore)</b></summary>
+
+![Tous les écrans dans le thème Terminal (phosphore)](docs/images/themes/terminal.png)
+
+</details>
+
+<details>
+<summary><b>Rouge nuit</b></summary>
+
+![Tous les écrans dans le thème Rouge nuit](docs/images/themes/red.png)
+
+</details>
+
+<details>
+<summary><b>Aero (verre)</b></summary>
+
+![Tous les écrans dans le thème Aero (verre)](docs/images/themes/aero.png)
+
+</details>
+
+<details>
+<summary><b>Cadrans analogiques</b></summary>
+
+![Tous les écrans dans le thème Cadrans analogiques](docs/images/themes/analog.png)
+
+</details>
+
+<details>
+<summary><b>HUD cockpit</b></summary>
+
+![Tous les écrans dans le thème HUD cockpit](docs/images/themes/hud.png)
+
+</details>
+
+<details>
+<summary><b>Tron (vectoriel)</b></summary>
+
+![Tous les écrans dans le thème Tron (vectoriel)](docs/images/themes/tron.png)
+
+</details>
+
+<details>
+<summary><b>Papier (encre)</b></summary>
+
+![Tous les écrans dans le thème Papier (encre)](docs/images/themes/paper.png)
+
+</details>
+
+<details>
+<summary><b>Papier sombre</b></summary>
+
+![Tous les écrans dans le thème Papier sombre](docs/images/themes/paper_dark.png)
+
+</details>
+
+<details>
+<summary><b>Pixel 8 bits</b></summary>
+
+![Tous les écrans dans le thème Pixel 8 bits](docs/images/themes/pixel.png)
+
+</details>
+
+<details>
+<summary><b>Windows XP</b></summary>
+
+![Tous les écrans dans le thème Windows XP](docs/images/themes/xp.png)
+
+</details>
+
+<details>
+<summary><b>Nokia / Symbian</b></summary>
+
+![Tous les écrans dans le thème Nokia / Symbian](docs/images/themes/symbian.png)
+
+</details>
 
 ## Installation
 

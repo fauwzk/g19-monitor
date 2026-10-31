@@ -265,8 +265,10 @@ def bar(d, x, y, w, h, frac, color, name):
         return True
     if name == "tron":
         d.rectangle((x, y, x + w, y + h), outline=R.mix(color, R.BG, 0.55))
-        if fw > 2:
+        if fw > 2 and h >= 4:
             d.rectangle((x + 2, y + 2, x + fw - 2, y + h - 2), fill=color)
+        elif fw > 0:        # barre trop fine pour le liseré : pleine
+            d.rectangle((x, y, x + fw, y + h), fill=color)
         return True
     if name in PAPERS:
         d.rectangle((x, y, x + w, y + h), outline=R.mix(R.TEXT, R.BG, 0.45))
