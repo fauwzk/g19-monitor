@@ -77,6 +77,9 @@ DEFAULTS = {
     "voice_toasts": True,            # bandeau quand quelqu'un rejoint / quitte l'appel Discord
     "steam_toasts": True,            # bandeau quand un ami Steam se connecte
     "stream_toasts": True,           # bandeau quand quelqu'un se connecte en streaming
+    "game_blacklist": ["obs"],       # jamais traités comme des jeux (début du nom d'exécutable)
+    "screen_list_style": "coverflow",  # touche Menu : coverflow, flat, grid, list
+    "screen_dither": True,           # tramage : dégradés sans bandes sur l'écran 16 bits
     "animations": True,              # animation entre pages, fondus à l'ouverture des écrans
     "animation_style": "slide",      # g19/anim.py : slide, fade, zoom, wipe, cube, blinds, none
     "animation_speed": "normal",     # fast, normal, slow
@@ -188,7 +191,7 @@ BLINK_SPEEDS = {"lent": 600, "normal": 300, "rapide": 180}  # ms par clignotemen
 # thèmes de l'écran (voir render.THEMES)
 THEMES = ("dark", "light", "g19", "g15", "neon", "dynamic", "contrast", "glacier", "braise",
           "terminal", "red", "aero", "analog", "hud", "tron", "paper", "paper_dark",
-          "pixel", "xp")
+          "pixel", "xp", "symbian")
 
 
 def load():

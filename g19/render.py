@@ -139,6 +139,16 @@ XP = {**LIGHT, "BG": (236, 233, 216), "PANEL": (255, 255, 255), "TRACK": (198, 2
       "DISCORD": (70, 80, 210), "STEAM_BLUE": (0, 100, 170), "STEAM_GAME": (70, 130, 20),
       "HEAD_TEXT": (255, 255, 255), "HEAD_MUTED": (200, 220, 255),
       "HEAD_ACCENT": (255, 255, 255)}
+# Nokia / Symbian (S60 des années 2007) : fond bleu nuit, barre du haut bleue vernie, panneaux
+# bleus arrondis et brillants, sélection bleu vif ; police Trebuchet (proche de Nokia Sans)
+SYMBIAN = {**DARK, "BG": (4, 20, 52), "PANEL": (16, 50, 104), "TRACK": (30, 62, 112),
+           "TEXT": (255, 255, 255), "MUTED": (170, 196, 230), "ACCENT": (56, 170, 255),
+           "GPU_C": (120, 210, 255), "RAM_C": (150, 230, 120), "OK": (110, 230, 90),
+           "WARN": (255, 200, 60), "HOT": (255, 90, 80), "CLAUDE": (255, 160, 110),
+           "DISCORD": (150, 160, 255), "STEAM_BLUE": (110, 200, 255),
+           "STEAM_GAME": (170, 230, 90),
+           "HEAD_TEXT": (255, 255, 255), "HEAD_MUTED": (190, 220, 255),
+           "HEAD_ACCENT": (255, 255, 255)}
 PIXEL = {**DARK, "BG": (12, 12, 28), "PANEL": (36, 36, 76), "TRACK": (76, 76, 124),
          "TEXT": (252, 252, 252), "MUTED": (188, 188, 204), "ACCENT": (60, 188, 252),
          "GPU_C": (248, 120, 88), "RAM_C": (184, 120, 248), "OK": (88, 216, 84),
@@ -147,7 +157,8 @@ PIXEL = {**DARK, "BG": (12, 12, 28), "PANEL": (36, 36, 76), "TRACK": (76, 76, 12
 THEMES = {"dark": DARK, "light": LIGHT, "g19": G19, "g15": G15, "neon": NEON,
           "dynamic": DARK, "contrast": CONTRAST, "glacier": GLACIER, "braise": BRAISE,
           "terminal": TERMINAL, "red": NIGHT_RED, "aero": AERO, "analog": ANALOG, "hud": HUD,
-          "tron": TRON, "paper": PAPER, "paper_dark": PAPER_DARK, "pixel": PIXEL, "xp": XP}
+          "tron": TRON, "paper": PAPER, "paper_dark": PAPER_DARK, "pixel": PIXEL, "xp": XP,
+          "symbian": SYMBIAN}
 THEME_LABELS = {"dark": "Sombre", "light": "Clair", "g19": "G19 (origine)",
                 "g15": "Rétro G15", "neon": "Néon", "dynamic": "Dynamique (pochette)",
                 "contrast": "Haut contraste", "glacier": "Glacier", "braise": "Braise",
@@ -155,7 +166,7 @@ THEME_LABELS = {"dark": "Sombre", "light": "Clair", "g19": "G19 (origine)",
                 "aero": "Aero (verre)", "analog": "Cadrans analogiques", "hud": "HUD cockpit",
                 "tron": "Tron (vectoriel)", "paper": "Papier (encre)",
                 "paper_dark": "Papier sombre", "pixel": "Pixel 8 bits",
-                "xp": "Windows XP"}
+                "xp": "Windows XP", "symbian": "Nokia / Symbian"}
 _theme = "dark"
 _backdrops = {}
 HEAD_TEXT, HEAD_MUTED, HEAD_ACCENT = TEXT, MUTED, ACCENT   # texte sur la barre de titre
@@ -167,8 +178,10 @@ _dynamic = {"accent": None, "key": None}
 def apply_theme(c):
     """Thème des réglages ; le thème dynamique prend en plus la couleur de la pochette en
     cours (ou du jeu lancé) comme accent, et en teinte légèrement les fonds."""
+    global ANIMATE
     name = theme_of(c.settings)
     set_theme(name)
+    ANIMATE = bool(c.settings.get("animations", True))
     _wall["on"] = bool(c.settings.get("wallpaper_bg"))
     _wall["dim"] = max(0, min(95, int(c.settings.get("wallpaper_dim", 60) or 0)))
     if name != "dynamic":
@@ -368,6 +381,7 @@ class Ctx:
     mirror: object = None        # screencap.ScreenMirror (page Écran PC)
     docker_scroll: int = 0
     fuel: object = None          # fuel.FuelMonitor : prix des carburants (Home Assistant)
+    dnd: object = None           # dnd.DoNotDisturb : « Ne pas déranger » de Windows
     fuel_scroll: int = 0
     gpu_view: str = "both"       # page GPU en jeu : FPS et temps d'image, ou l'un des deux (OK)
     driver: object = None        # amd_driver.AmdDriver
@@ -405,6 +419,7 @@ FONT_FACES = {"hud": ("CascadiaMono.ttf", "CascadiaMono.ttf", 0.86),    # chasse
               "paper": ("times.ttf", "timesbd.ttf", 1.06),             # à empattements
               "paper_dark": ("times.ttf", "timesbd.ttf", 1.06),
               "xp": ("tahoma.ttf", "tahomabd.ttf", 1.0),
+              "symbian": ("trebuc.ttf", "trebucbd.ttf", 1.0),       # proche de Nokia Sans
               "analog": ("framd.ttf", "framd.ttf", 1.0)}                # industrielle
 
 
@@ -475,6 +490,25 @@ def _wall_canvas(wp):
 
 def load_color(pct, base):
     return HOT if pct >= 90 else WARN if pct >= 75 else base
+
+
+_glides = {}
+ANIMATE = True        # réglage « animations » (posé par apply_theme)
+
+
+def glide(key, target, t, tau=0.07):
+    """Valeur affichée qui rattrape `target` en douceur (constante de temps `tau` s) : curseurs
+    qui glissent d'une ligne à l'autre, chiffres qui défilent. Saute directement à la cible au
+    premier affichage, après une pause, ou animations coupées."""
+    v, last = _glides.get(key, (target, None))
+    if not ANIMATE or last is None or not 0 <= t - last < 0.5:
+        v = target
+    elif t > last:
+        v += (target - v) * (1 - math.exp(-(t - last) / tau))
+    if abs(target - v) < 0.05:
+        v = target
+    _glides[key] = (v, t)
+    return v
 
 
 def dim(c, f):
@@ -996,9 +1030,10 @@ def page_system(d, st, gpu, sessions, t, media=None, fans=None):
     ram = st.ram
     c = load_color(ram.percent, RAM_C)
     d.text((10, y), "RAM", font=font(13, True), fill=c)
-    d.text((310, y + 1), f"{fmt_bytes(ram.used)} / {fmt_bytes(ram.total)}  ·  {ram.percent:.0f}%",
+    ram_pct = ram.percent
+    d.text((310, y + 1), f"{fmt_bytes(ram.used)} / {fmt_bytes(ram.total)}  ·  {ram_pct:.0f}%",
            font=font(12), fill=TEXT, anchor="ra")
-    bar(d, 10, y + 20, 300, 7, ram.percent / 100, c)
+    bar(d, 10, y + 20, 300, 7, ram_pct / 100, c)
 
     # Réseau + disques
     y = 174
@@ -1159,17 +1194,16 @@ def page_claude(d, sessions, t, scroll=0, usage=None, sel=0, git=None):
         d.text((W // 2, 100), "Aucune session Claude", font=font(16, True), fill=MUTED, anchor="mm")
         d.text((W // 2, 124), "les hooks s'activent au prochain lancement",
                font=font(11), fill=dim(MUTED, 0.7), anchor="mm")
-        d.text((W // 2, 160), "OK · ouvrir Claude", font=font(11, True), fill=CLAUDE, anchor="mm")
+        key_hints(d, 160, [("OK", "ouvrir Claude")], "center", color=CLAUDE)
         return
     rows = sessions[scroll:scroll + CLAUDE_ROWS]
     if len(sessions) <= CLAUDE_ROWS - 1:
-        d.text((W - 10, 206), "▲▼ choisir · OK aller à la session", font=font(9, True),
-               fill=dim(CLAUDE, 0.8), anchor="rb")
+        key_hints(d, 200, [("▲▼", "choisir"), ("OK", "aller à la session")], "right",
+                  color=CLAUDE)
     for i, s in enumerate(rows):
         y = 30 + i * 35
         color = STATE_COLOR.get(s.state, MUTED)
-        selected = scroll + i == sel and len(sessions) > 1
-        panel(d, (6, y, W - 6, y + 31), 6, outline=ACCENT if selected else None)
+        panel(d, (6, y, W - 6, y + 31), 6)
         d.rounded_rectangle((6, y, 10, y + 31), 2, fill=color)
         state_dot(d, 22, y + 10, s.state, t)
         age = fmt_age(s.age)
@@ -1197,7 +1231,9 @@ def page_claude(d, sessions, t, scroll=0, usage=None, sel=0, git=None):
     if len(sessions) > CLAUDE_ROWS:
         d.text((W - 8, 208), f"{scroll + 1}-{scroll + len(rows)}/{len(sessions)}",
                font=font(9), fill=MUTED, anchor="rb")
-
+    if len(sessions) > 1 and scroll <= sel < scroll + len(rows):
+        cy = glide("claude_cursor", 30 + (sel - scroll) * 35, t)
+        d.rounded_rectangle((6, cy, W - 6, cy + 31), 6, outline=ACCENT, width=1)
 
 def page_cores(d, st, t, sensors=None):
     cores = st.cores or [0]
@@ -1500,6 +1536,10 @@ def page_history(d, c, t):
     current = {"cpu_t": s.get("cpu_temp"), "gpu_t": s.get("temp"),
                "cpu": c.stats.cpu if c.stats else None, "gpu": s.get("load")}
     from .history import METRICS
+    if not h or len(h.points) < 2:
+        empty_state(d, ICON_HISTORY, "Historique des 24 dernières heures",
+                    "une mesure par minute, les courbes se remplissent")
+        return
     for k, (key, color) in enumerate(zip(keys, colors)):
         y = 30 + k * 94
         label, unit, _ = METRICS[key]
@@ -1520,11 +1560,7 @@ def page_history(d, c, t):
     for x, lab, anchor in ((10, "-24 h", "la"), (W // 2, "-12 h", "ma"), (W - 10, "maint.", "ra")):
         d.text((x, 208), lab, font=font(9), fill=MUTED, anchor=anchor)
     other = "charges" if view == "temp" else "températures"
-    d.text((W - 10, 232), f"OK · {other}", font=font(9, True), fill=dim(ACCENT, 0.85),
-           anchor="rb")
-    if h and len(h.points) < 2:
-        d.text((10, 232), "les mesures s'accumulent (une par minute)", font=font(9),
-               fill=MUTED, anchor="lb")
+    key_hints(d, 228, [("OK", other)], "right")
 
 
 def ping_color(ms):
@@ -1611,8 +1647,7 @@ def page_docker(d, c, t):
     items = dk.containers if dk else []
     if not items:
         msg = (dk.status if dk and dk.status else "Aucun conteneur")
-        d.text((W // 2, 112), "Docker", font=font(16, True), fill=ACCENT, anchor="mm")
-        d.text((W // 2, 136), fit(d, msg, font(11), 290), font=font(11), fill=MUTED, anchor="mm")
+        empty_state(d, ICON_BOX, "Docker", msg)
         return
     run = [x for x in items if x["state"] == "running"]
     cpu = sum(x["cpu"] for x in run)
@@ -1622,42 +1657,47 @@ def page_docker(d, c, t):
     d.text((W - 10, 36), f"CPU {cpu:.0f}% · RAM {fmt_bytes(mem)}", font=font(11), fill=MUTED,
            anchor="rm")
     c.docker_scroll = max(0, min(c.docker_scroll, len(items) - DOCKER_ROWS))
-    for i, x in enumerate(items[c.docker_scroll:c.docker_scroll + DOCKER_ROWS]):
-        y = 48 + i * 37
-        label, col = DOCKER_STATE.get(x["state"], (x["state"], "MUTED"))
-        col = globals()[col]
-        if x.get("oom"):
-            label, col = "arrêté · mémoire (OOM)", HOT
-        elif x["state"] == "exited" and x["exit"] not in (0, 130, 137, 143):
-            label, col = f"arrêté · code {x['exit']}", HOT
-        panel(d, (6, y, W - 6, y + 33), 6)
-        d.rounded_rectangle((6, y, 9, y + 33), 2, fill=col)
-        on = x["state"] == "running"
-        d.text((16, y + 10), fit(d, x["name"], font(12, True), 150), font=font(12, True),
-               fill=TEXT if on else MUTED, anchor="lm")
-        sub = label + (f" · {x['restarts']} redém." if x["restarts"] else "")
-        d.text((16, y + 24), fit(d, f"{sub} · {x['image']}", font(9), 160), font=font(9),
-               fill=col, anchor="lm")
-        if on:
-            bar = 56
-            frac = min(x["cpu"], 100) / 100
-            d.text((W - 14 - bar - 6, y + 10), f"{x['cpu']:.0f}%", font=font(11, True),
-                   fill=load_color(x["cpu"], TEXT), anchor="rm")
-            d.rounded_rectangle((W - 14 - bar, y + 7, W - 14, y + 13), 3, fill=TRACK)
-            if frac > 0.01:
-                d.rounded_rectangle((W - 14 - bar, y + 7, W - 14 - bar + bar * frac, y + 13), 3,
-                                    fill=load_color(x["cpu"], ACCENT))
-            memf = x["mem"] / x["mem_limit"] if x["mem_limit"] else 0
-            d.text((W - 14 - bar - 6, y + 24), fmt_bytes(x["mem"]), font=font(10), fill=MUTED,
-                   anchor="rm")
-            d.rounded_rectangle((W - 14 - bar, y + 21, W - 14, y + 27), 3, fill=TRACK)
-            if memf > 0.01:
-                d.rounded_rectangle((W - 14 - bar, y + 21, W - 14 - bar + bar * min(memf, 1),
-                                     y + 27), 3, fill=load_color(memf * 100, GPU_C))
+    img = d._image
+    smooth_rows(img, "docker_scroll", c.docker_scroll, len(items), 48, 48 + DOCKER_ROWS * 37,
+                37, lambda li, ld, idx, y: _docker_row(ld, items[idx], y), t)
     if len(items) > DOCKER_ROWS:
         first, last = c.docker_scroll + 1, min(len(items), c.docker_scroll + DOCKER_ROWS)
         d.text((W - 8, 238), f"{first}-{last}/{len(items)} · ▲▼", font=font(9), fill=MUTED,
                anchor="rb")
+
+
+def _docker_row(d, x, y):
+    """Une ligne de conteneur (y : haut de la ligne)."""
+    label, col = DOCKER_STATE.get(x["state"], (x["state"], "MUTED"))
+    col = globals()[col]
+    if x.get("oom"):
+        label, col = "arrêté · mémoire (OOM)", HOT
+    elif x["state"] == "exited" and x["exit"] not in (0, 130, 137, 143):
+        label, col = f"arrêté · code {x['exit']}", HOT
+    panel(d, (6, y, W - 6, y + 33), 6)
+    d.rounded_rectangle((6, y, 9, y + 33), 2, fill=col)
+    on = x["state"] == "running"
+    d.text((16, y + 10), fit(d, x["name"], font(12, True), 150), font=font(12, True),
+           fill=TEXT if on else MUTED, anchor="lm")
+    sub = label + (f" · {x['restarts']} redém." if x["restarts"] else "")
+    d.text((16, y + 24), fit(d, f"{sub} · {x['image']}", font(9), 160), font=font(9),
+           fill=col, anchor="lm")
+    if on:
+        bar = 56
+        frac = min(x["cpu"], 100) / 100
+        d.text((W - 14 - bar - 6, y + 10), f"{x['cpu']:.0f}%", font=font(11, True),
+               fill=load_color(x["cpu"], TEXT), anchor="rm")
+        d.rounded_rectangle((W - 14 - bar, y + 7, W - 14, y + 13), 3, fill=TRACK)
+        if frac > 0.01:
+            d.rounded_rectangle((W - 14 - bar, y + 7, W - 14 - bar + bar * frac, y + 13), 3,
+                                fill=load_color(x["cpu"], ACCENT))
+        memf = x["mem"] / x["mem_limit"] if x["mem_limit"] else 0
+        d.text((W - 14 - bar - 6, y + 24), fmt_bytes(x["mem"]), font=font(10), fill=MUTED,
+               anchor="rm")
+        d.rounded_rectangle((W - 14 - bar, y + 21, W - 14, y + 27), 3, fill=TRACK)
+        if memf > 0.01:
+            d.rounded_rectangle((W - 14 - bar, y + 21, W - 14 - bar + bar * min(memf, 1),
+                                 y + 27), 3, fill=load_color(memf * 100, GPU_C))
 
 
 FUEL_ROWS = 5
@@ -1672,11 +1712,9 @@ def page_fuel(d, c, t):
     stations = fm.stations if fm else {}
     if not stations:
         msg = fm.status if fm and fm.status else "Aucune station"
-        d.text((W // 2, 104), "Carburant", font=font(16, True), fill=ACCENT, anchor="mm")
-        d.text((W // 2, 128), fit(d, msg, font(11), 290), font=font(11), fill=MUTED, anchor="mm")
-        if fm and fm.status == "Home Assistant non configuré":
-            d.text((W // 2, 146), "utilitaire → onglet Carburant", font=font(10), fill=MUTED,
-                   anchor="mm")
+        empty_state(d, ICON_CAR, "Carburant",
+                    "Home Assistant à configurer : utilitaire → Services"
+                    if fm and fm.status == "Home Assistant non configuré" else msg)
         return
     fuels = fuels_of(stations)
     main = c.settings.get("fuel_main") or ""
@@ -1708,8 +1746,8 @@ def page_fuel(d, c, t):
     lows = {f: (cheapest(stations, f) or (None,))[0] for f in fuels}
     rows = list(stations.values())
     c.fuel_scroll = max(0, min(c.fuel_scroll, len(rows) - FUEL_ROWS))
-    y = 86
-    for i, s in enumerate(rows[c.fuel_scroll:c.fuel_scroll + FUEL_ROWS]):
+    def station_row(li, d, idx, y):
+        i, s = idx, rows[idx]
         if i % 2 == 0:
             panel(d, (6, y, W - 6, y + 26), 5)
         name, city = s["short"], s["city"]
@@ -1732,7 +1770,9 @@ def page_fuel(d, c, t):
                 low = lows[f] is not None and v["price"] <= lows[f] + 1e-9
                 color = OK if low else (dim(TEXT, 0.55) if stale else TEXT)
                 d.text((cx, y + 13), fmt_price(v["price"]), font=cell, fill=color, anchor="mm")
-        y += 28
+
+    smooth_rows(d._image, "fuel_scroll", c.fuel_scroll, len(rows), 86, 86 + FUEL_ROWS * 28, 28,
+                station_row, t)
 
     # pied : fraîcheur des prix et état de la lecture
     ages = [v["age"] for s in rows for v in s["fuels"].values() if v["age"] is not None]
@@ -1759,8 +1799,8 @@ def page_toasts(img, d, c, t):
     log = list(c.toast_log or ())
     d.text((10, 36), "Derniers bandeaux", font=font(12, True), fill=TEXT, anchor="lm")
     if not log:
-        d.text((W // 2, 130), "Aucun bandeau pour l'instant", font=font(11), fill=MUTED,
-               anchor="mm")
+        empty_state(d, ICON_MESSAGE, "Aucun bandeau pour l'instant",
+                    "messages, amis, alertes… les 20 derniers restent ici")
         return
     c.toast_sel = max(0, min(c.toast_sel, len(log) - 1))
     top = max(0, min(c.toast_sel - TOAST_ROWS + 2, len(log) - TOAST_ROWS))
@@ -1772,9 +1812,7 @@ def page_toasts(img, d, c, t):
         color = n.get("color") or ACCENT
         if isinstance(color, list):
             color = tuple(color)
-        sel = top + i == c.toast_sel
-        panel(d, (6, y, W - 6, y + 28), 5, outline=ACCENT if sel and _theme != "g19" else None,
-              color=dim(ACCENT, 0.35) if sel and _theme == "g19" else None)
+        panel(d, (6, y, W - 6, y + 28), 5)
         d.rounded_rectangle((6, y, 9, y + 28), 2, fill=color)
         avatar(img, d, cache, n.get("icon"), 26, y + 14, 20, n.get("title") or n.get("source"),
                color=color)
@@ -1788,8 +1826,9 @@ def page_toasts(img, d, c, t):
                font=font(11, True), fill=TEXT, anchor="lm")
         d.text((42, y + 21), fit(d, n.get("body") or "", font(10), W - 54), font=font(10),
                fill=dim(TEXT, 0.75), anchor="lm")
-    d.text((10, 237), "▲▼ choisir · OK ouvrir", font=font(9), fill=dim(MUTED, 0.85),
-           anchor="lb")
+    cy = glide("toasts_cursor", 48 + (c.toast_sel - top) * 31, t)
+    d.rounded_rectangle((6, cy, W - 6, cy + 28), 5, outline=ACCENT, width=1)
+    key_hints(d, 230, [("▲▼", "choisir"), ("OK", "ouvrir")])
 
 
 def page_screen(img, d, c, t):
@@ -1800,7 +1839,7 @@ def page_screen(img, d, c, t):
     m.want()
     frame = m.frame
     if frame is None:
-        d.text((W // 2, 120), m.status or "capture…", font=font(12), fill=MUTED, anchor="mm")
+        empty_state(d, ICON_SCREEN, "Recopie de l'écran", m.status or "démarrage de la capture…")
         return
     x0 = (W - frame.width) // 2
     y0 = 25 + (215 - frame.height) // 2
@@ -1810,8 +1849,8 @@ def page_screen(img, d, c, t):
         d.polygon([(cx, cy), (cx, cy + 10), (cx + 3, cy + 7), (cx + 7, cy + 7)],
                   fill=(255, 255, 255), outline=(0, 0, 0))
     if y0 + frame.height < H - 12:
-        d.text((W // 2, H - 7), f"{m.label}   OK écran · ▲▼ zoom", font=font(9),
-               fill=MUTED, anchor="mm")
+        d.text((10, H - 8), m.label, font=font(9), fill=MUTED, anchor="lm")
+        key_hints(d, H - 8, [("OK", "écran"), ("▲▼", "zoom")], "right")
 
 
 def page_batteries(d, c, t):
@@ -1821,8 +1860,7 @@ def page_batteries(d, c, t):
     devices = b.devices if b else []
     if not devices:
         msg = (b.status if b and b.status else "Aucun appareil avec batterie")
-        d.text((W // 2, 112), "Batteries", font=font(16, True), fill=ACCENT, anchor="mm")
-        d.text((W // 2, 136), fit(d, msg, font(11), 290), font=font(11), fill=MUTED, anchor="mm")
+        empty_state(d, ICON_BATTERY, "Batteries", msg)
         return
     for i, dev in enumerate(devices[:5]):
         y = 30 + i * 40
@@ -1931,18 +1969,21 @@ def page_steam(img, d, c, t):
         return
     rows = max(1, (H - 4 - y) // 22)
     c.steam_scroll = max(0, min(c.steam_scroll, len(friends) - rows))
-    for f in friends[c.steam_scroll:c.steam_scroll + rows]:
+    cache = c.discord.avatars if c.discord else None
+
+    def friend_row(li, ld, idx, fy):
+        f = friends[idx]
         color = STEAM_GAME if f["game"] else STEAM_BLUE if f["state"] == "en ligne" else MUTED
-        avatar(img, d, c.discord.avatars if c.discord else None, f["avatar"], 18, y + 10, 18,
-               f["name"], ring=color)
-        d.text((34, y + 10), fit(d, f["name"], font(11, True), 120), font=font(11, True),
-               fill=TEXT, anchor="lm")
+        avatar(li, ld, cache, f["avatar"], 18, fy + 10, 18, f["name"], ring=color)
+        ld.text((34, fy + 10), fit(ld, f["name"], font(11, True), 120), font=font(11, True),
+                fill=TEXT, anchor="lm")
         status = f["game"] or f["state"]
-        d.text((W - 10, y + 10), fit(d, status, font(10), 150), font=font(10), fill=color,
-               anchor="rm")
-        y += 22
+        ld.text((W - 10, fy + 10), fit(ld, status, font(10), 150), font=font(10), fill=color,
+                anchor="rm")
+    smooth_rows(img, "steam_scroll", c.steam_scroll, len(friends), y, min(H - 2, y + rows * 22),
+                22, friend_row, t)
     if len(friends) > rows:
-        d.text((W - 4, H - 2), "▲▼", font=font(8), fill=MUTED, anchor="rb")
+        key_hints(d, H - 8, [("▲▼", "")], "right", x=W - 4)
 
 
 AUDIO_APPS_VISIBLE = 4
@@ -1968,10 +2009,17 @@ def page_audio(d, c, t):
     def is_sel(row):
         return sel is not None and row == sel
 
+    moving = []     # surbrillance encore en route : un liseré posé à la fin, par-dessus
+
     def highlight(y0, y1, row):
         if is_sel(row):
-            panel(d, (4, y0, W - 4, y1), 5, outline=None if _theme == "g19" else ACCENT,
-                  color=dim(ACCENT, 0.35) if _theme == "g19" else PANEL)
+            gy = glide("audio_cursor", y0, t)
+            gh = glide("audio_cursor_h", y1 - y0, t)
+            if abs(gy - y0) < 0.5:
+                panel(d, (4, y0, W - 4, y1), 5, outline=None if _theme == "g19" else ACCENT,
+                      color=dim(ACCENT, 0.35) if _theme == "g19" else PANEL)
+            else:
+                moving.append((gy, gh))
 
     # profils : une pastille par profil, celui en cours en couleur
     off = 0
@@ -2067,14 +2115,14 @@ def page_audio(d, c, t):
                font=font(9), fill=MUTED, anchor="rb")
 
     if cur is not None and sel and sel["kind"] == "profile":
-        hint = "◄► / OK changer de profil · ▲▼ ligne · Annuler"
+        hints = [("◄►", "profil"), ("▲▼", "ligne"), ("Annuler", "")]
     elif cur is not None:
-        hint = "▲▼ ligne · ◄► régler · OK muet / appliquer · Annuler"
+        hints = [("▲▼", "ligne"), ("◄►", "régler"), ("OK", "muet"), ("Annuler", "")]
     else:
-        hint = "OK profils / réglages · ▲▼ volume général" if profs else             "OK régler · ▲▼ volume général"
-    room = W - 20 - (int(d.textlength(span, font=font(9))) + 8 if span else 0)
-    d.text((10, 236), fit(d, hint, font(9), room), font=font(9), fill=dim(MUTED, 0.85),
-           anchor="lb")
+        hints = [("OK", "profils / réglages" if profs else "régler"), ("▲▼", "volume")]
+    key_hints(d, 229, hints)
+    for gy, gh in moving:
+        d.rounded_rectangle((4, gy, W - 4, gy + gh), 5, outline=ACCENT, width=1)
 
 
 def _luminance(r, g, b):
@@ -2236,6 +2284,172 @@ def shadow_text(d, xy, text, fnt, fill, anchor="la"):
     d.text((x, y), text, font=fnt, fill=fill, anchor=anchor)
 
 
+ART_FADE = 0.45        # s de fondu d'une pochette à la suivante
+_art_state = {}
+
+
+def animated_art(slot, art, track, t):
+    """Pochette à poser : fondu depuis la précédente au changement de morceau (`track`).
+    Renvoie (image, décalage x, décalage y)."""
+    st = _art_state.setdefault(slot, {"track": None, "img": None, "prev": None, "since": 0.0})
+    if track != st["track"]:
+        st["prev"] = st["img"] if st["track"] is not None else None
+        st["track"], st["since"] = track, t
+    st["img"] = art
+    out = art
+    k = (t - st["since"]) / ART_FADE
+    if ANIMATE and st["prev"] is not None and 0 <= k < 1:
+        prev = st["prev"] if st["prev"].size == art.size else st["prev"].resize(art.size)
+        out = Image.blend(prev.convert("RGBA"), art.convert("RGBA"), 1 - (1 - k) ** 3)
+    return out, 0, 0
+
+
+_eq_levels = {}
+
+
+_icon_fonts = {}
+
+
+def icon(d, glyph, cx, cy, size, color):
+    """Icône de la police d'icônes de Windows (Segoe Fluent Icons, sinon MDL2)."""
+    f = _icon_fonts.get(size)
+    if f is None:
+        for name in ("SegoeIcons.ttf", "segmdl2.ttf"):
+            try:
+                f = ImageFont.truetype(name, size)
+                break
+            except OSError:
+                continue
+        _icon_fonts[size] = f
+    if f is None:
+        return False
+    d.text((cx, cy), glyph, font=f, fill=color, anchor="mm")
+    return True
+
+
+# icônes des états vides (Segoe Fluent Icons)
+ICON_BELL, ICON_LOCK, ICON_MESSAGE, ICON_HISTORY = "\uE7ED", "\uE72E", "\uE8BD", "\uE81C"
+ICON_SCREEN, ICON_BOX, ICON_PEOPLE, ICON_BATTERY = "\uE7F4", "\uE7B8", "\uE716", "\uE83F"
+ICON_CAR, ICON_GAME, ICON_MOON = "\uE804", "\uE7FC", "\uE708"
+
+
+def empty_state(d, glyph, title, subtitle="", color=None, cy=118):
+    """Page sans contenu : une icône dans un rond, un titre et une phrase qui dit quoi faire."""
+    color = color or ACCENT
+    d.ellipse((W // 2 - 26, cy - 46, W // 2 + 26, cy + 6), fill=dim(color, 0.18),
+              outline=dim(color, 0.5))
+    icon(d, glyph, W // 2, cy - 20, 26, color)
+    d.text((W // 2, cy + 24), fit(d, title, font(13, True), W - 30), font=font(13, True),
+           fill=TEXT, anchor="mm")
+    if subtitle:
+        d.text((W // 2, cy + 43), fit(d, subtitle, font(10), W - 30), font=font(10),
+               fill=MUTED, anchor="mm")
+
+
+def key_hints(d, y, items, align="left", x=None, color=None):
+    """Indications de touches, partout pareilles : chaque touche dans une petite pastille
+    (comme une touche du G19), suivie de son action. items : [(touche, action)].
+    y : milieu vertical ; align : left / right / center. Renvoie la largeur prise."""
+    fk, fl = font(8, True), font(9)
+    color = color or ACCENT
+    parts = []
+    for key, label in items:
+        kw = d.textlength(key, font=fk) + 8
+        lw = d.textlength(label, font=fl) if label else 0
+        parts.append((key, label, kw, lw))
+    total = sum(kw + (lw + 4 if lw else 0) for _, _, kw, lw in parts) + 9 * (len(parts) - 1)
+    if align == "right":
+        x0 = (x if x is not None else W - 10) - total
+    elif align == "center":
+        x0 = (x if x is not None else W // 2) - total / 2
+    else:
+        x0 = x if x is not None else 10
+    cx = x0
+    for key, label, kw, lw in parts:
+        d.rounded_rectangle((cx, y - 6, cx + kw, y + 6), 4, outline=dim(color, 0.85), width=1)
+        d.text((cx + kw / 2, y), key, font=fk, fill=TEXT, anchor="mm")
+        cx += kw
+        if lw:
+            d.text((cx + 4, y), label, font=fl, fill=dim(MUTED, 0.95), anchor="lm")
+            cx += lw + 4
+        cx += 9
+    return total
+
+
+def smooth_rows(img, key, scroll, count, top, bottom, row_h, draw_row, t):
+    """Liste qui défile en douceur : la position glisse vers la ligne `scroll`, les lignes
+    sont dessinées sur un morceau du fond (top → bottom) puis reposées, coupées net aux bords.
+    draw_row(image, draw, index, y) dessine la ligne `index` à la hauteur locale `y`."""
+    offset = glide(key, scroll * row_h, t, 0.08)
+    first = int(offset // row_h)
+    frac = offset - first * row_h
+    layer = img.crop((0, top, W, bottom))
+    ld = ImageDraw.Draw(layer)
+    visible = (bottom - top) // row_h + 2
+    for idx in range(max(0, first), min(count, first + visible)):
+        draw_row(layer, ld, idx, (idx - first) * row_h - frac)
+    img.paste(layer, (0, top))
+_appear = {}
+
+
+def appear(key, on, t, duration=0.4, start=False):
+    """Opacité 0..1 d'un élément qui apparaît (ou disparaît) en fondu quand `on` change :
+    « OK paroles » une fois les paroles trouvées… Une clé nouvelle (autre morceau) part de
+    l'état `start` : masqué par défaut, l'élément y apparaît donc toujours en fondu."""
+    if key not in _appear:
+        if len(_appear) > 64:
+            _appear.clear()
+        _appear[key] = (start, -1e9)       # état de départ stable, pas « en train de changer »
+    state, since = _appear[key]
+    if on != state:
+        _appear[key] = (on, t)
+        state, since = on, t
+    k = 1.0 if not ANIMATE else min(1.0, max(0.0, (t - since) / duration))
+    k = 1 - (1 - k) ** 2
+    return k if on else 1 - k
+
+
+def faded(img, alpha, draw):
+    """Dessine avec `draw(d)` à l'opacité `alpha` (calque transparent quand alpha < 1)."""
+    if alpha <= 0.01:
+        return
+    if alpha >= 0.99:
+        draw(ImageDraw.Draw(img))
+        return
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw(ImageDraw.Draw(layer))
+    a = layer.getchannel("A").point(lambda v: int(v * alpha))
+    layer.putalpha(a)
+    img.paste(layer, (0, 0), layer)
+
+
+def equalizer(d, key, x, cy, w, h, n, vol, playing, t, color, mirror=False, clip_w=None):
+    """Petit égaliseur animé : `n` barres qui montent et descendent autour de la ligne `cy`,
+    menées par le niveau réel de la sortie audio (montée vive, retombée douce) ; chaque barre
+    a son propre rythme pour que l'ensemble danse. Barres au repos quand la lecture est en
+    pause ou les animations coupées."""
+    peak = min(1.0, (vol.peak if vol else 0.0) * 1.5) if playing and ANIMATE else 0.0
+    levels, last = _eq_levels.get(key, ([0.0] * n, t))
+    if len(levels) != n:
+        levels = [0.0] * n
+    dt = max(0.0, min(0.2, t - last))
+    bw = (w - (n - 1) * 3) / n
+    for i in range(n):
+        k = i if not mirror else n - 1 - i
+        wave = 0.5 + 0.5 * math.sin(t * (6.3 + 1.9 * k) + k * 2.4)
+        wave2 = 0.5 + 0.5 * math.sin(t * (3.1 + 0.7 * k) + k * 1.3)
+        target = peak * (0.25 + 0.75 * (0.6 * wave + 0.4 * wave2))
+        tau = 0.04 if target > levels[i] else 0.22
+        levels[i] += (target - levels[i]) * (1 - math.exp(-dt / tau)) if dt else 0.0
+        bh = max(2.0, levels[i] * h)
+        bx = x + i * (bw + 3)
+        if clip_w is not None and bx + bw > x + clip_w:
+            continue                     # repliée : barres de droite masquées
+        d.rounded_rectangle((bx, cy - bh / 2, bx + bw, cy + bh / 2), min(2, bw / 2),
+                            fill=color if levels[i] > 0.02 else dim(color, 0.35))
+    _eq_levels[key] = (levels, t)
+
+
 def page_media_2010(img, d, m, t, vol=None, lyrics_hint=False):
     """Lecteur du thème G19 : grande pochette vernie avec son reflet à gauche ; à droite le
     titre, les commandes et le volume ; la barre de lecture sur toute la largeur en bas."""
@@ -2246,7 +2460,8 @@ def page_media_2010(img, d, m, t, vol=None, lyrics_hint=False):
     size, cx0, cy0 = 118, 12, 32
     if m.art:
         cov, refl = _cover_2010(m.art, size)
-        img.paste(cov, (cx0, cy0), cov)
+        cov, dx, dy = animated_art("2010", cov, (m.title, m.artist), t)
+        img.paste(cov, (cx0 + dx, cy0 + dy), cov)
         img.paste(refl, (cx0, cy0 + size + 2), refl)
     else:
         panel(d, (cx0, cy0, cx0 + size, cy0 + size), 8)
@@ -2314,8 +2529,9 @@ def page_media_2010(img, d, m, t, vol=None, lyrics_hint=False):
         right = "en cours" if m.playing else "en pause"
     shadow_text(d, (x0, by + 12), fmt_time(pos), font(10, True), (255, 255, 255))
     shadow_text(d, (xe, by + 12), right, font(10), (210, 216, 226), anchor="ra")
-    if lyrics_hint:
-        shadow_text(d, (W // 2, by + 12), "OK · paroles", font(9, True), bright, anchor="ma")
+    faded(img, appear(("hint_2010", m.title, m.artist), bool(lyrics_hint), t),
+          lambda dd: shadow_text(dd, (W // 2, by + 12), "OK · paroles", font(9, True), bright,
+                                 anchor="ma"))
 
 
 def page_media(img, d, m, t, vol=None, lyrics_hint=False):
@@ -2333,7 +2549,8 @@ def page_media(img, d, m, t, vol=None, lyrics_hint=False):
     if m.bg:
         img.paste(backdrop(m.bg), (0, 0))
     if m.art:
-        img.paste(m.art, (12, 34), m.art)
+        art, dx, dy = animated_art("media", m.art, (m.title, m.artist), t)
+        img.paste(art, (12 + dx, 34 + dy), art)
     else:
         panel(d, (12, 34, 124, 146), 10)
         d.text((68, 90), "♪", font=font(40, True), fill=MUTED, anchor="mm")
@@ -2379,17 +2596,24 @@ def page_media(img, d, m, t, vol=None, lyrics_hint=False):
         d.text((308, 172), "en cours de lecture" if m.playing else "en pause",
                font=font(11), fill=MUTED, anchor="ra")
 
-    # contrôles (▲ précédent · OK lecture/pause · ▼ suivant)
+    # contrôles (▲ précédent · OK lecture/pause · ▼ suivant), encadrés par l'égaliseur
     cy = 212
+    eq_color = accent if m.playing else MUTED
+    equalizer(d, "media_l", 14, cy, 72, 26, 8, vol, m.playing, t, eq_color, mirror=True)
+    hint = appear(("hint_media", m.title, m.artist), bool(lyrics_hint), t)
+    # à droite : l'égaliseur se replie en douceur pour laisser la place à « OK paroles »
+    equalizer(d, "media_r", 234, cy, 72, 26, 8, vol, m.playing, t, eq_color,
+              clip_w=72 - 36 * hint)
     skip_icon(d, 110, cy, False, TEXT)
     d.ellipse((W // 2 - 16, cy - 16, W // 2 + 16, cy + 16), fill=TEXT)
     play_icon(d, W // 2 + (0 if m.playing else 1), cy, m.playing, BG)
     skip_icon(d, 210, cy, True, TEXT)
     for cx, key in ((110, "▲"), (210, "▼")):
         d.text((cx, cy + 14), key, font=font(9), fill=MUTED, anchor="mt")
-    if lyrics_hint:
-        d.text((W - 10, cy - 6), "OK", font=font(9, True), fill=accent, anchor="rm")
-        d.text((W - 10, cy + 6), "paroles", font=font(9, True), fill=accent, anchor="rm")
+    def hint_text(dd):
+        dd.text((W - 10, cy - 6), "OK", font=font(9, True), fill=accent, anchor="rm")
+        dd.text((W - 10, cy + 6), "paroles", font=font(9, True), fill=accent, anchor="rm")
+    faded(img, hint, hint_text)
 
 
 # --- Jeux --------------------------------------------------------------------------------------
@@ -2634,7 +2858,12 @@ def toast_candidates(c, page, t):
                                              "title": n["author"],
                                              "body": n["body"], "icon": n["icon"],
                                              "color": DISCORD}))
-    if wn and wn.items and c.settings["win_toasts"] and page != "notifs":
+    dn = c.dnd.event if c.dnd else None
+    if dn:
+        cands.append((dn[2], {"page": "notifs", "source": "Windows", "title": dn[0],
+                              "body": dn[1], "icon": None, "color": ACCENT}))
+    quiet_win = bool(c.dnd and c.dnd.active)
+    if wn and wn.items and c.settings["win_toasts"] and page != "notifs" and not quiet_win:
         n = wn.items[0]
         if not ignored(c, n):
             cands.append((wn.last_time, {"page": "notifs", "source": n["app"], "title": n["title"],
@@ -2732,17 +2961,26 @@ def page_notifs(img, d, c, t):
     wn = c.notifs
     if not wn or wn.status != "ok":
         status = wn.status if wn else "indisponible"
-        d.text((W // 2, 100), "Notifications", font=font(18, True), fill=ACCENT, anchor="mm")
-        d.text((W // 2, 126), fit(d, status, font(12), 290), font=font(12), fill=MUTED, anchor="mm")
         if status == "accès refusé":
-            d.text((W // 2, 148), "Paramètres → Confidentialité → Notifications",
-                   font=font(11), fill=dim(MUTED, 0.7), anchor="mm")
+            empty_state(d, ICON_LOCK, "Accès aux notifications refusé",
+                        "Paramètres → Confidentialité → Notifications", WARN)
+        else:
+            empty_state(d, ICON_BELL, "Notifications Windows indisponibles", status)
         return
     items = [n for n in list(wn.items) if not ignored(c, n)]
-    d.text((10, 36), "Notifications Windows", font=font(12, True), fill=TEXT, anchor="lm")
-    d.text((W - 10, 36), "OK effacer", font=font(9), fill=dim(MUTED, 0.7), anchor="rm")
+    dnd = c.dnd if c.dnd and c.dnd.supported else None
+    quiet = bool(dnd and dnd.active)
+    if quiet:      # bandeau d'état : la lune, et ce que ça change
+        panel(d, (6, 27, W - 6, 45), 6, color=dim(ACCENT, 0.22))
+        icon(d, ICON_MOON, 18, 36, 11, ACCENT)
+        d.text((30, 36), "Ne pas déranger", font=font(11, True), fill=TEXT, anchor="lm")
+    else:
+        d.text((10, 36), "Notifications Windows", font=font(12, True), fill=TEXT, anchor="lm")
+    key_hints(d, 36, ([("OK", "réactiver" if quiet else "ne pas déranger")] if dnd else [])
+              + [("▼", "effacer")], "right")
     if not items:
-        d.text((W // 2, 140), "Aucune notification", font=font(12), fill=MUTED, anchor="mm")
+        empty_state(d, ICON_BELL, "Aucune notification", "les nouvelles s'afficheront ici",
+                    cy=132)
         return
     for i, n in enumerate(items[:5]):
         y = 50 + i * 37
@@ -2758,11 +2996,9 @@ def page_notifs(img, d, c, t):
 def page_discord(img, d, dc, t):
     if not dc or dc.status != "connecté":
         status = dc.status if dc else "indisponible"
-        d.text((W // 2, 100), "Discord", font=font(18, True), fill=DISCORD, anchor="mm")
-        d.text((W // 2, 126), fit(d, status, font(12), 290), font=font(12), fill=MUTED, anchor="mm")
-        if status == "non configuré":
-            d.text((W // 2, 148), "configure-le dans config_g19.pyw (onglet Discord)",
-                   font=font(11), fill=dim(MUTED, 0.7), anchor="mm")
+        empty_state(d, ICON_PEOPLE, "Discord",
+                    "à configurer : utilitaire → Services → Discord" if status == "non configuré"
+                    else status, DISCORD)
         return
 
     y = 28
@@ -2821,6 +3057,13 @@ def page_discord(img, d, dc, t):
 
 # --- Assemblage --------------------------------------------------------------------------------
 
+DATA_READY = {
+    "weather": lambda c: c.weather and c.weather.data,
+    "steam": lambda c: c.steam and (c.steam.friends or c.steam.downloads),
+    "fuel": lambda c: c.fuel and c.fuel.stations,
+}
+
+
 def render(page, c, t=None, post=True):
     """Image 320×240 de la page `page` (id de settings.PAGE_TITLES) ; `post` False : sans la
     passe finale du thème (miniatures du coverflow, filtrées avec le reste)."""
@@ -2829,6 +3072,9 @@ def render(page, c, t=None, post=True):
     img = canvas()
     d = ImageDraw.Draw(img)
     pages = c.pages or c.settings["pages"]
+    # données qui arrivent d'Internet (météo, Steam, Carburant) : elles apparaissent en fondu
+    ready = DATA_READY.get(page)
+    base = img.copy() if ready else None
     if page == "media":  # les fonds pleine page sont posés avant le bandeau
         if c.show_lyrics and has_lyrics(c):
             page_lyrics(img, d, c.media, c.lyrics, t, c.settings.get("animations", True))
@@ -2873,6 +3119,11 @@ def render(page, c, t=None, post=True):
         page_claude(d, c.sessions, t, c.scroll, c.usage, c.claude_sel, c.git)
     else:
         page_cores(d, c.stats, t, c.gpu.s if c.gpu else None)
+    if base is not None:
+        have = bool(ready(c))
+        alpha = appear(("data", page), have, t, 0.5)
+        if have and alpha < 0.99:     # pas encore là : le message d'attente reste visible
+            img.paste(Image.blend(base, img, max(0.0, alpha)))
     title = PAGE_TITLES.get(page, page)
     if page == "system":
         lt = time.localtime(t)
@@ -2953,32 +3204,83 @@ def page_speedtest(d, sp, t):
         speed_gauge(d, W // 2, 108, 66, value, vmax, color, PHASES.get(sp.phase, ""))
         bar(d, 40, 184, 240, 4, sp.progress, color)
         result_cols(d, 200, sp.ping, sp.jitter, sp.down, None if sp.phase != "upload" else sp.live)
-        d.text((W - 8, 34), "OK annuler", font=font(9), fill=dim(MUTED, 0.7), anchor="ra")
+        key_hints(d, 38, [("OK", "annuler")], "right")
         return
 
-    d.text((10, 36), "Test de débit", font=font(13, True), fill=TEXT, anchor="lm")
-    d.text((W - 10, 36), "OK lancer", font=font(10, True), fill=ACCENT, anchor="rm")
     last = sp.history[0] if sp.history else None
-    if sp.phase == "error":
-        d.text((W // 2, 60), f"Échec : {sp.error}", font=font(11), fill=HOT, anchor="mm")
     if not last:
-        d.text((W // 2, 130), "Aucun test pour l'instant", font=font(13, True), fill=MUTED,
+        # pas encore de test : une invitation au centre
+        speed_gauge(d, W // 2, 104, 52, 0, 1000, ACCENT, "")
+        d.text((W // 2, 178), "Aucun test pour l'instant", font=font(13, True), fill=TEXT,
                anchor="mm")
-        d.text((W // 2, 152), "serveurs speed.cloudflare.com", font=font(10),
-               fill=dim(MUTED, 0.7), anchor="mm")
+        d.text((W // 2, 196), "serveurs speed.cloudflare.com", font=font(9),
+               fill=dim(MUTED, 0.8), anchor="mm")
+        speed_button(d, 220, "lancer un test")
         return
-    panel(d, (6, 70, W - 6, 136), 8)
-    when = fmt_ago(t - last["time"]) + (f" · serveur {last['server']}" if last.get("server") else "")
-    d.text((W // 2, 80), when, font=font(9), fill=MUTED, anchor="mm")
-    result_cols(d, 96, last["ping"], last["jitter"], last["down"], last["up"])
 
-    d.text((10, 148), "Historique", font=font(10, True), fill=MUTED, anchor="lm")
-    for i, r in enumerate(sp.history[1:5]):
-        y = 164 + i * 18
-        d.text((10, y), fmt_ago(t - r["time"]), font=font(10), fill=MUTED, anchor="lm")
-        d.text((130, y), f"↓ {fmt_mbps(r['down'])}", font=font(10, True), fill=OK, anchor="lm")
-        d.text((214, y), f"↑ {fmt_mbps(r['up'])}", font=font(10, True), fill=ACCENT, anchor="lm")
-        d.text((W - 10, y), f"{r['ping']:.0f} ms", font=font(10), fill=TEXT, anchor="rm")
+    # dernier résultat : deux grandes cartes
+    for k, (label, value, color, arrow) in enumerate(
+            (("DESCENDANT", last["down"], OK, "↓"), ("MONTANT", last["up"], ACCENT, "↑"))):
+        x0 = 6 + k * 157
+        panel(d, (x0, 30, x0 + 151, 88), 8)
+        d.rounded_rectangle((x0, 30, x0 + 3, 88), 2, fill=color)
+        d.text((x0 + 12, 41), f"{arrow} {label}", font=font(9, True), fill=color, anchor="lm")
+        num, unit = speed_parts(value)
+        d.text((x0 + 12, 66), num, font=font(26, True), fill=TEXT, anchor="lm")
+        d.text((x0 + 16 + d.textlength(num, font=font(26, True)), 72), unit, font=font(10),
+               fill=MUTED, anchor="lm")
+    ping = f"ping {last['ping']:.0f} ms" + (f" · gigue {last['jitter']:.0f} ms"
+                                           if last.get("jitter") is not None else "")
+    d.text((10, 100), ping, font=font(10, True), fill=TEXT, anchor="lm")
+    when = fmt_ago(t - last["time"]) + (f" · {last['server']}" if last.get("server") else "")
+    d.text((W - 10, 100), when, font=font(9), fill=MUTED, anchor="rm")
+    if sp.phase == "error":
+        d.text((W // 2, 100), fit(d, f"échec : {sp.error}", font(9, True), 120), font=font(9, True),
+               fill=HOT, anchor="mm")
+
+    # historique : une paire de barres par test, le plus récent à droite
+    panel(d, (6, 110, W - 6, 206), 8)
+    d.text((14, 120), "HISTORIQUE", font=font(8, True), fill=MUTED, anchor="lm")
+    hist = list(reversed(sp.history[:12]))
+    top = max(max(r["down"] or 0, r["up"] or 0) for r in hist) or 1
+    d.text((W - 14, 120), f"max {fmt_mbps(top)}", font=font(8), fill=MUTED, anchor="rm")
+    x_left, x_right, base, height = 16, W - 16, 196, 62
+    slot = (x_right - x_left) / max(len(hist), 6)
+    bw = max(3, min(10, slot / 2 - 3))
+    x = x_right - slot * len(hist)
+    d.line((x_left, base, x_right, base), fill=TRACK)
+    for i, r in enumerate(hist):
+        cx = x + slot * (i + 0.5)
+        newest = i == len(hist) - 1
+        for j, (v, color) in enumerate(((r["down"], OK), (r["up"], ACCENT))):
+            h = max(2, height * (v or 0) / top)
+            bx = cx - bw - 1 + j * (bw + 2)
+            fill = color if newest else dim(color, 0.6)
+            d.rounded_rectangle((bx, base - h, bx + bw, base), min(2, bw / 2), fill=fill)
+    d.text((x_left, 202), fmt_ago(t - hist[0]["time"]) if len(hist) > 1 else "", font=font(8),
+           fill=dim(MUTED, 0.8), anchor="lm")
+    d.text((x_right, 202), "dernier", font=font(8), fill=dim(MUTED, 0.8), anchor="rm")
+    speed_button(d, 222, "lancer un test")
+
+
+def speed_parts(v):
+    """« 875 » et « Mb/s », ou « 1,25 » et « Gb/s »."""
+    if v is None:
+        return "—", ""
+    if v >= 1000:
+        return f"{v / 1000:.2f}".replace(".", ","), "Gb/s"
+    return f"{v:.0f}", "Mb/s"
+
+
+def speed_button(d, cy, text):
+    """Bouton « OK … » centré, comme une touche."""
+    f = font(10, True)
+    w = d.textlength(text, font=f) + 44
+    x0 = W // 2 - w / 2
+    d.rounded_rectangle((x0, cy - 9, x0 + w, cy + 9), 9, outline=ACCENT, width=1)
+    d.rounded_rectangle((x0 + 4, cy - 6, x0 + 28, cy + 6), 6, fill=ACCENT)
+    d.text((x0 + 16, cy), "OK", font=font(8, True), fill=BG, anchor="mm")
+    d.text((x0 + 34, cy), text, font=f, fill=ACCENT, anchor="lm")
 
 
 # --- Menu Paramètres (touche Menu du G19) ------------------------------------------------------
@@ -2996,6 +3298,12 @@ def render_menu(menu, c, t=None):
     d.text((W - 8, 12), "▲▼ choisir · OK changer · Menu fermer", font=font(9), fill=HEAD_MUTED,
            anchor="rm")
     rows = menu.items[menu.top:menu.top + VISIBLE]
+    # surbrillance d'abord, à une position qui glisse vers la ligne choisie
+    sy = glide("menu_cursor", 30 + (menu.index - menu.top) * 26, t)
+    if _theme == "g19":   # barre de sélection bleue vernie, comme les menus du G19
+        panel(d, (4, sy + 2, W - 4, sy + 24), 6, color=dim(ACCENT, 0.75))
+    else:
+        d.rounded_rectangle((4, sy + 2, W - 4, sy + 24), 6, fill=PANEL, outline=ACCENT, width=1)
     for i, item in enumerate(rows):
         key, label, kind, _opts = item
         y = 30 + i * 26
@@ -3004,12 +3312,6 @@ def render_menu(menu, c, t=None):
             d.text((10, y + 14), label.upper(), font=font(9, True), fill=ACCENT, anchor="lm")
             continue
         selected = idx == menu.index
-        if selected:
-            if _theme == "g19":   # barre de sélection bleue vernie, comme les menus du G19
-                panel(d, (4, y + 2, W - 4, y + 24), 6, color=dim(ACCENT, 0.75))
-            else:
-                d.rounded_rectangle((4, y + 2, W - 4, y + 24), 6, fill=PANEL, outline=ACCENT,
-                                    width=1)
         d.text((14, y + 13), fit(d, label, font(12, selected), 200), font=font(12, selected),
                fill=TEXT if selected else dim(TEXT, 0.8), anchor="lm")
         value = menu.value_text(item, cfg)
@@ -3018,12 +3320,13 @@ def render_menu(menu, c, t=None):
             pw = 40
             d.rounded_rectangle((W - 14 - pw, y + 6, W - 14, y + 20), 7,
                                 fill=OK if on else TRACK)
-            knob = W - 14 - 10 if on else W - 14 - pw + 10
+            knob = glide(f"menu_bool_{key}", W - 14 - 10 if on else W - 14 - pw + 10, t, 0.05)
             d.ellipse((knob - 5, y + 8, knob + 5, y + 18), fill=TEXT)
         else:
             d.text((W - 14, y + 13), (f"◄ {value} ►" if selected and kind in ("int", "choice")
                                       else value), font=font(12, True),
-                   fill=ACCENT if selected else TEXT, anchor="rm")
+                   # sur la barre bleue pleine du thème G19, le bleu ne se lirait pas
+                   fill=(TEXT if _theme == "g19" else ACCENT) if selected else TEXT, anchor="rm")
     # barre de défilement
     total = len(menu.items)
     if total > VISIBLE:
@@ -3218,7 +3521,7 @@ def page_vpn(d, v, t):
         if ts["exit"]:
             exit_line = f"sortie via {ts['exit']}"
         else:
-            exit_line = f"{ts['online']}/{len(ts['peers'])} appareils en ligne · pas de nœud de sortie"
+            exit_line = f"{ts['online']}/{len(ts['peers'])} en ligne · sans nœud de sortie"
         hint = "OK " + ("couper" if on else "connecter")
         room = W - 14 - d.textlength(hint, font=font(9, True)) - 8 - 44
         d.text((44, 77), fit(d, exit_line, font(10), room), font=font(10),
@@ -3244,6 +3547,13 @@ def page_vpn(d, v, t):
         if len(ts["peers"]) > 5:
             d.text((W - 12, 186), f"+{len(ts['peers']) - 5} appareils", font=font(9),
                    fill=dim(MUTED, 0.7), anchor="rm")
+        if not ts["peers"]:
+            tailscale_logo(d, W // 2 - 10, 118, False)
+            d.text((W // 2, 150), "Aucun autre appareil sur ce réseau", font=font(11, True),
+                   fill=MUTED, anchor="mm")
+            d.text((W // 2, 167), "connecte un téléphone ou un PC à Tailscale" if on else
+                   "OK pour connecter Tailscale", font=font(10), fill=dim(MUTED, 0.75),
+                   anchor="mm")
 
     # IP publique + autres VPN
     d.line((6, 194, W - 6, 194), fill=TRACK)
@@ -3300,7 +3610,7 @@ def page_lyrics(img, d, m, lyrics, t, animate=True):
     pos = m.position_at(t) + LYRICS_OFFSET
     if m.duration > 0:
         bar(d, 10, 232, W - 20, 3, min(pos / m.duration, 1), media_accent(m) if m.playing else MUTED)
-    d.text((W - 10, 52), "OK retour", font=font(8, True), fill=dim(MUTED, 0.8), anchor="rm")
+    key_hints(d, 52, [("OK", "retour")], "right")
 
     def center(text, size=13):
         d.text((W // 2, 140), text, font=font(size, True), fill=MUTED, anchor="mm")
@@ -3439,8 +3749,8 @@ def render_fans(index, c, t=None):
         d.text((W // 2, 226), f"Sécurité ({safety['reason']}) · {when}", font=font(9, True),
                fill=WARN, anchor="mm")
     else:
-        d.text((W // 2, 226), "◄ ► choisir · OK appliquer · Annuler fermer", font=font(9),
-               fill=MUTED, anchor="mm")
+        key_hints(d, 226, [("◄►", "choisir"), ("OK", "appliquer"), ("Annuler", "")],
+                  "center")
     return postprocess(img)
 
 

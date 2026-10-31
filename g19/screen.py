@@ -6,8 +6,36 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 from .lcd import H, W
 
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+# l'écran du G19 est en 16 bits (5 bits rouge, 6 vert, 5 bleu) : un dégradé lisse et sombre
+# (pochette floutée, fond d'écran) y tombe en paliers visibles. Un tramage ordonné 4×4 répartit
+# les teintes intermédiaires entre les deux niveaux voisins : les bandes disparaissent.
+_BAYER = None
+_STEP = (8.0, 4.0, 8.0)
+
+
+def dither(img, cfg):
+    """Image prête pour l'écran 16 bits, tramée (réglage screen_dither)."""
+    global _BAYER
+    if np is None or not cfg.get("screen_dither", True):
+        return img
+    if _BAYER is None:
+        b = np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]],
+                     dtype=np.float32) / 16.0
+        _BAYER = np.tile(b, (H // 4 + 1, W // 4 + 1))[:H, :W, None]
+    a = np.asarray(img.convert("RGB"), dtype=np.float32)
+    if a.shape[:2] != _BAYER.shape[:2]:
+        return img
+    step = np.array(_STEP, dtype=np.float32)
+    q = np.floor(a / step + _BAYER) * step
+    return Image.fromarray(np.clip(q, 0, 255).astype(np.uint8))
+
 DEFAULTS = {"screen_brightness": 100, "screen_contrast": 100, "screen_gamma": 100,
-            "screen_saturation": 100, "screen_sharpen": False}
+            "screen_saturation": 100, "screen_sharpen": False, "screen_dither": True}
 PATTERN_SECONDS = 20
 
 _lut = {"key": None, "table": None}

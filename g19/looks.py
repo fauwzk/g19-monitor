@@ -11,7 +11,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from . import render as R
 
-SHAPED = ("aero", "analog", "hud", "tron", "paper", "paper_dark", "pixel", "xp")
+SHAPED = ("aero", "analog", "hud", "tron", "paper", "paper_dark", "pixel", "xp", "symbian")
 PAPERS = ("paper", "paper_dark")
 _cache = {}
 
@@ -66,6 +66,8 @@ def glass(d, box, r, color, alpha, shine=False, outline=None, width=1):
 def canvas(name):
     """Fond propre au thème (sans fond d'écran), ou None."""
     W, H = R.W, R.H
+    if name == "symbian":
+        return _cached(("canvas", name), _symbian_canvas).copy()
     if name == "tron":
         def make():
             # grille au sol en perspective sous l'horizon, lueur à l'horizon
@@ -136,6 +138,9 @@ def canvas(name):
 
 def title_bar(d, name):
     W = R.W
+    if name == "symbian":
+        _symbian_title_bar(d)
+        return True
     if name == "xp":
         _xp_title_bar(d)
         return True
@@ -178,6 +183,9 @@ def title_bar(d, name):
 
 def panel(d, box, r, outline, width, color, name):
     x0, y0, x1, y1 = (int(v) for v in box)
+    if name == "symbian":
+        _symbian_panel(d, x0, y0, x1, y1, max(4, min(r, 8)), color, outline, width)
+        return True
     if name == "xp":
         d.rounded_rectangle(box, min(r, 3), fill=color, outline=outline or XP_BORDER, width=width)
         return True
@@ -237,6 +245,9 @@ def bar(d, x, y, w, h, frac, color, name):
     frac = max(0.0, min(frac, 1.0))
     x, y, w, h = int(x), int(y), int(w), int(h)
     fw = int(w * frac)
+    if name == "symbian":
+        _symbian_bar(d, x, y, w, h, fw, color)
+        return True
     if name == "xp":
         _xp_bar(d, x, y, w, h, frac, color)
         return True
@@ -543,6 +554,72 @@ def _xp_gauge(d, cx, cy, r, frac, color, value, unit, label):
     d.text((cx, cy - 2), value, font=R.font(15, True), fill=R.TEXT, anchor="mm")
     d.text((cx, cy + 12), unit, font=R.font(9), fill=R.MUTED, anchor="mm")
     d.text((cx, cy + r + 9), label, font=R.font(10), fill=R.MUTED, anchor="mm")
+
+
+# --- Nokia / Symbian (S60) -----------------------------------------------------------------------
+
+def _symbian_canvas():
+    """Fond bleu nuit dégradé traversé d'une vague de lumière, comme les fonds S60."""
+    W, H = R.W, R.H
+    col = Image.new("RGB", (1, H))
+    for y in range(H):
+        col.putpixel((0, y), R.mix((10, 46, 104), (2, 10, 30), y / H))
+    img = col.resize((W, H))
+    wave = Image.new("L", (W, H), 0)
+    wd = ImageDraw.Draw(wave)
+    for k in range(28):
+        y0 = 150 + k * 2
+        wd.arc((-160, y0 - 140, W + 160, y0 + 140), 200, 340, fill=max(0, 70 - k * 3), width=2)
+    img.paste((120, 200, 255), (0, 0), wave.filter(ImageFilter.GaussianBlur(5)))
+    return img
+
+
+def _symbian_title_bar(d):
+    """Barre d'état bleue vernie : reflet clair en haut, liseré lumineux en bas."""
+    W = R.W
+    for y in range(25):
+        if y < 11:
+            c = R.mix((92, 168, 240), (36, 110, 206), y / 11)
+        else:
+            c = R.mix((22, 88, 184), (10, 50, 128), (y - 11) / 13)
+        d.line((0, y, W, y), fill=c)
+    d.line((0, 0, W, 0), fill=(170, 215, 255))
+    d.line((0, 24, W, 24), fill=(120, 200, 255))
+
+
+def _symbian_panel(d, x0, y0, x1, y1, r, color, outline, width):
+    """Panneau S60 : bleu arrondi, plus clair en haut, liseré bleu clair et reflet."""
+    if x1 - x0 < 4 or y1 - y0 < 4:
+        d.rounded_rectangle((x0, y0, x1, y1), r, fill=color)
+        return
+    top = R.mix(color, (255, 255, 255), 0.12)
+    bottom = R.mix(color, (0, 0, 0), 0.25)
+    w, h = x1 - x0 + 1, y1 - y0 + 1
+
+    def make():                       # dégradé vertical clair → couleur → sombre
+        col = Image.new("RGB", (1, h))
+        for k in range(h):
+            f = k / max(1, h - 1)
+            col.putpixel((0, k), R.mix(top, color, f * 2) if f < 0.5
+                         else R.mix(color, bottom, (f - 0.5) * 2))
+        return col.resize((w, h))
+    grad = _cached(("sym_grad", w, h, color), make)
+    d._image.paste(grad, (x0, y0), _mask(w, h, r))   # pile dans l'arrondi, coins compris
+    d.rounded_rectangle((x0, y0, x1, y1), r, outline=outline or R.mix(color, (150, 210, 255), 0.45),
+                        width=width)
+    d.line((x0 + r, y0 + 1, x1 - r, y0 + 1), fill=R.mix(top, (255, 255, 255), 0.35))
+
+
+def _symbian_bar(d, x, y, w, h, fw, color):
+    """Barre de progression S60 : piste sombre arrondie, remplissage vif et brillant."""
+    r = max(1, h // 2)
+    d.rounded_rectangle((x, y, x + w, y + h), r, fill=(6, 24, 58),
+                        outline=R.mix((6, 24, 58), (120, 180, 240), 0.35))
+    if fw < 2:
+        return
+    d.rounded_rectangle((x, y, x + fw, y + h), r, fill=color)
+    if h >= 4:
+        d.line((x + r, y + 1, x + fw - r, y + 1), fill=R.mix(color, (255, 255, 255), 0.55))
 
 
 # --- dernière passe ------------------------------------------------------------------------------

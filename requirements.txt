@@ -6,6 +6,7 @@ winrt-Windows.Foundation
 winrt-Windows.Storage.Streams
 winrt-Windows.UI.Notifications
 winrt-Windows.Devices.Geolocation
+winrt-Windows.UI.Shell
 winrt-Windows.UI.Notifications.Management
 winrt-Windows.ApplicationModel
 pycaw
@@ -14,3 +15,4 @@ comtypes
 fonttools
 PySide6-Essentials>=6.6
 hidapi
+numpy

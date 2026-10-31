@@ -1,6 +1,10 @@
-"""Navigation « coverflow » (touche Menu) : les écrans en miniatures, en perspective avec leur
-reflet ; ◄ ► font glisser les cartes, OK ouvre l'écran (ou les paramètres), Menu / Annuler
-ferment. La carte du centre est rendue en direct, les autres sont rafraîchies à tour de rôle."""
+"""Liste des écrans (touche Menu), au choix (réglage screen_list_style) :
+  coverflow : miniatures en perspective avec leur reflet ;
+  flat      : cartes à plat qui défilent ;
+  grid      : mosaïque de miniatures, ▲ ▼ changent de ligne ;
+  list      : noms à gauche, aperçu de l'écran choisi à droite.
+◄ ► (et ▲ ▼) choisissent, OK ouvre l'écran (ou les paramètres), Menu / Annuler ferment. La
+carte choisie est rendue en direct, les autres sont rafraîchies à tour de rôle."""
 import math
 
 from PIL import Image, ImageDraw
@@ -9,6 +13,10 @@ from . import render as R
 from .settings import PAGE_TITLES
 
 CARD_W, CARD_H = 184, 138
+STYLES = {"coverflow": "coverflow", "flat": "cartes à plat", "grid": "grille",
+          "list": "liste et aperçu"}
+GRID_COLS, GRID_W, GRID_H, GRID_ROW = 3, 96, 72, 92
+LIST_ROWS, LIST_ROW = 8, 24
 CENTER_Y = 104
 SETTINGS = "__settings__"
 
@@ -46,12 +54,15 @@ class Coverflow:
         self.index = 0
         self.pos = 0.0           # position affichée (glisse vers index)
         self.thumbs = {}
+        self.style = "coverflow"
+        self._small = {}         # (carte, taille) → (miniature source, réduction)
         self._turn = 0
         self._mask = Image.new("L", (CARD_W, CARD_H), 255)
         self._fade = Image.linear_gradient("L").resize((CARD_W, CARD_H // 3)) \
             .point(lambda v: max(0, 80 - v * 80 // 255)).transpose(Image.FLIP_TOP_BOTTOM)
 
-    def show(self, pages, current):
+    def show(self, pages, current, style="coverflow"):
+        self.style = style if style in STYLES else "coverflow"
         self.cards = list(pages) + [SETTINGS]
         self.index = self.cards.index(current) if current in self.cards else 0
         self.pos = float(self.index)
@@ -62,6 +73,9 @@ class Coverflow:
         """("page", nom) ou ("settings",) quand une carte est ouverte, sinon None."""
         if button in ("menu", "cancel"):
             self.open = False
+        elif button in ("up", "down") and self.style == "grid":
+            step = GRID_COLS if button == "down" else -GRID_COLS
+            self.index = max(0, min(len(self.cards) - 1, self.index + step))
         elif button in ("left", "up"):
             self.index = (self.index - 1) % len(self.cards)
         elif button in ("right", "down"):
@@ -94,9 +108,131 @@ class Coverflow:
         if other != center:
             self.thumbs[other] = self._thumb(other, c, t, menu_preview)
 
+    def _small_thumb(self, card, w, h):
+        """Miniature réduite (mise en cache tant que la grande ne change pas)."""
+        big = self.thumbs.get(card)
+        if big is None:
+            return None
+        hit = self._small.get((card, w, h))
+        if hit and hit[0] is big:
+            return hit[1]
+        small = big.resize((w, h), Image.BILINEAR)
+        self._small[(card, w, h)] = (big, small)
+        return small
+
+    def _title(self, card):
+        return "Paramètres" if card == SETTINGS else PAGE_TITLES.get(card, card)
+
+    def _frame(self, d, hint):
+        R.title_bar(d)
+        d.text((8, 12), "Écrans", font=R.font(14, True), fill=R.TEXT, anchor="lm")
+        d.text((R.W - 8, 12), hint, font=R.font(9), fill=R.MUTED, anchor="rm")
+
     def render(self, c, t, menu_preview):
         R.apply_theme(c)
         self._refresh(c, t, menu_preview)
+        if self.style == "grid":
+            return self._render_grid(t)
+        if self.style == "list":
+            return self._render_list(t)
+        if self.style == "flat":
+            return self._render_flat(t)
+        return self._render_coverflow()
+
+    def _render_grid(self, t):
+        img = R.canvas()
+        d = ImageDraw.Draw(img)
+        self._frame(d, "◄ ► ▲ ▼ choisir · OK ouvrir · Menu fermer")
+        n = len(self.cards)
+        rows = (n + GRID_COLS - 1) // GRID_COLS
+        row = self.index // GRID_COLS
+        top = R.glide("cf_grid_top", max(0, min(row - 1, rows - 2)) * GRID_ROW, t, 0.09)
+        x0 = (R.W - GRID_COLS * (GRID_W + 8) + 8) // 2
+        sel_x = x0 + (self.index % GRID_COLS) * (GRID_W + 8)
+        sel_y = 32 + row * GRID_ROW - top
+        gx = R.glide("cf_grid_x", sel_x, t)
+        gy = R.glide("cf_grid_y", sel_y, t)
+        R.panel(d, (gx - 4, gy - 4, gx + GRID_W + 4, gy + GRID_H + 16), 6,
+                color=R.dim(R.ACCENT, 0.35))
+        for i, card in enumerate(self.cards):
+            x = x0 + (i % GRID_COLS) * (GRID_W + 8)
+            y = 32 + (i // GRID_COLS) * GRID_ROW - top
+            if y < 20 or y > 224:
+                continue
+            th = self._small_thumb(card, GRID_W, GRID_H)
+            if th is not None:
+                if i != self.index:
+                    th = Image.eval(th, lambda v: int(v * 0.7))
+                img.paste(th, (int(x), int(y)))
+            d.text((x + GRID_W // 2, y + GRID_H + 7), self._title(card),
+                   font=R.font(10, i == self.index),
+                   fill=R.TEXT if i == self.index else R.MUTED, anchor="mm")
+        return R.postprocess(img)
+
+    def _render_list(self, t):
+        img = R.canvas()
+        d = ImageDraw.Draw(img)
+        self._frame(d, "▲ ▼ choisir · OK ouvrir · Menu fermer")
+        n = len(self.cards)
+        top = R.glide("cf_list_top", max(0, min(self.index - LIST_ROWS // 2, n - LIST_ROWS))
+                      * LIST_ROW, t, 0.09)
+        gy = R.glide("cf_list_y", 32 + self.index * LIST_ROW - top, t)
+        R.panel(d, (4, gy, 140, gy + LIST_ROW - 2), 6, color=R.dim(R.ACCENT, 0.35))
+        for i, card in enumerate(self.cards):
+            y = 32 + i * LIST_ROW - top
+            if y < 26 or y > 222:
+                continue
+            sel = i == self.index
+            d.text((14, y + LIST_ROW // 2 - 1), R.fit(d, self._title(card), R.font(12, sel), 120),
+                   font=R.font(12, sel), fill=R.TEXT if sel else R.MUTED, anchor="lm")
+        # aperçu de l'écran choisi, en direct
+        card = self.cards[self.index]
+        th = self._small_thumb(card, 168, 126)
+        R.panel(d, (146, 38, 316, 166), 6)
+        if th is not None:
+            img.paste(th, (147, 39))
+        d.rectangle((146, 38, 315, 165), outline=R.ACCENT)
+        d.text((231, 182), self._title(card), font=R.font(14, True), fill=R.TEXT, anchor="mm")
+        d.text((231, 200), f"{self.index + 1} / {n}", font=R.font(9), fill=R.MUTED, anchor="mm")
+        return R.postprocess(img)
+
+    def _render_flat(self, t):
+        n = len(self.cards)
+        diff = (self.index - self.pos + n / 2) % n - n / 2
+        self.pos = (self.pos + diff * 0.35) % n if abs(diff) > 0.01 else float(self.index)
+        img = R.canvas()
+        d = ImageDraw.Draw(img)
+        self._frame(d, "◄ ► choisir · OK ouvrir · Menu fermer")
+        items = []
+        for i, card in enumerate(self.cards):
+            k = (i - self.pos + n / 2) % n - n / 2
+            if abs(k) <= 2.2:
+                items.append((abs(k), k, card))
+        for _, k, card in sorted(items, reverse=True):
+            a = min(abs(k), 1.0)
+            s = 1 - 0.28 * a
+            w, h = int(CARD_W * s), int(CARD_H * s)
+            th = self._small_thumb(card, w, h)
+            if th is None:
+                continue
+            if abs(k) > 0.05:
+                th = Image.eval(th, lambda v, f=1 - 0.45 * a: int(v * f))
+            cx = R.W / 2 + k * 150
+            y = 110 - h // 2
+            img.paste(th, (int(cx - w / 2), y))
+            if abs(k) < 0.3:
+                d.rectangle((int(cx - w / 2), y, int(cx + w / 2) - 1, y + h - 1),
+                            outline=R.ACCENT)
+        card = self.cards[self.index]
+        d.text((R.W // 2, 200), self._title(card), font=R.font(15, True), fill=R.TEXT,
+               anchor="mm")
+        x0 = R.W // 2 - (n - 1) * 4
+        for i in range(n):
+            d.ellipse((x0 + i * 8 - 1.5, 222, x0 + i * 8 + 1.5, 225),
+                      fill=R.ACCENT if i == self.index else R.TRACK)
+        return R.postprocess(img)
+
+    def _render_coverflow(self):
         # glissement : la position rattrape l'index (au plus court, la liste boucle)
         n = len(self.cards)
         diff = (self.index - self.pos + n / 2) % n - n / 2

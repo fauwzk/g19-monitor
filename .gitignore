@@ -10,3 +10,7 @@ captures_*.png
 
 # paquet construit par build_package.py
 dist/
+
+# sauvegardes des réglages (contiennent les accès Discord, Steam, Home Assistant)
+*.zip
+g19_reglages_*

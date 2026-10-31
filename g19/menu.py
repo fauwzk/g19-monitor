@@ -10,6 +10,8 @@ from .night import HOURS
 
 ANIM_STYLES = [(k, v[0]) for k, v in STYLES.items()]
 ANIM_SPEEDS = list(SPEED_LABELS.items())
+SCREEN_LISTS = [("coverflow", "coverflow"), ("flat", "cartes à plat"), ("grid", "grille"),
+                ("list", "liste et aperçu")]
 
 GAME_PAGES = [("", "aucune"), ("gpu", "GPU"), ("games", "Jeux")]
 BASE_COLORS = [("#ffffff", "blanc"), ("#00c8ff", "cyan"), ("#4060ff", "bleu"),
@@ -28,7 +30,7 @@ THEME_ITEMS = [
                                   ("terminal", "terminal"), ("red", "rouge nuit"),
                                   ("aero", "aero (verre)"), ("analog", "cadrans"),
                                   ("hud", "HUD cockpit"), ("tron", "tron"), ("paper", "papier"),
-                                  ("paper_dark", "papier sombre"), ("xp", "Windows XP"),
+                                  ("paper_dark", "papier sombre"), ("xp", "Windows XP"), ("symbian", "Nokia / Symbian"),
                                   ("pixel", "pixel 8 bits")]),
     ("wallpaper_bg", "Fond d'écran Windows derrière", "bool", None),
     ("wallpaper_dim", "    assombri à (%)", "int", (0, 90, 5)),
@@ -84,6 +86,7 @@ SETTINGS_ITEMS = [
     ("animations", "Animations (pages, menus)", "bool", None),
     ("animation_style", "    style entre les pages", "choice", ANIM_STYLES),
     ("animation_speed", "    vitesse", "choice", ANIM_SPEEDS),
+    ("screen_list_style", "Liste des écrans (Menu)", "choice", SCREEN_LISTS),
     ("ping_target", "Cible du ping (Réseau)", "choice",
      [("1.1.1.1", "Cloudflare 1.1.1.1"), ("8.8.8.8", "Google 8.8.8.8"),
       ("9.9.9.9", "Quad9 9.9.9.9")]),
@@ -93,6 +96,7 @@ SETTINGS_ITEMS = [
     ("screen_gamma", "Tons sombres (gamma %)", "int", (60, 160, 5)),
     ("screen_saturation", "Saturation (%)", "int", (0, 200, 10)),
     ("screen_sharpen", "Netteté renforcée", "bool", None),
+    ("screen_dither", "Dégradés lissés (tramage)", "bool", None),
     ("test_pattern", "Afficher la mire", "action", ("test", "pattern")),
     (None, "Mode nuit", "title", None),
     ("night_mode", "Mode nuit", "bool", None),
@@ -131,9 +135,10 @@ class SettingsMenu:
         self.update_status = ""  # dernière vérification des mises à jour (affichée en tête)
         self.audio_active = None  # profil audio en cours (indice), affiché « actif »
 
-    def show(self, cfg, page_action=None, audio_profiles=None):
+    def show(self, cfg, page_action=None, audio_profiles=None, game=None):
         """Ouvre le menu ; `page_action` = (libellé, cible, args) lié à la page affichée ;
-        `audio_profiles` : profils audio proposés (ceux des réglages par défaut)."""
+        `audio_profiles` : profils audio proposés (ceux des réglages par défaut) ; `game` :
+        exécutable vu comme un jeu en ce moment (pour l'exclure d'un clic)."""
         launch = []
         if page_action:
             label, target, args = page_action
@@ -148,6 +153,8 @@ class SettingsMenu:
             (f"audio_profile_{i}", f"Profil · {p['name']}", "action", ("audio_profile", i))
             for i, p in enumerate(cfg.get("audio_profiles") or [] if audio_profiles is None
                                   else audio_profiles) if p.get("name")]
+        if game:
+            head.append(("ignore_game", f"Pas un jeu : {game}", "action", ("ignore_game", game)))
         self.items = (head + THEME_ITEMS + (profiles if len(profiles) > 1 else [])
                       + ([(None, "Ouvrir", "title", None)] + launch if launch else [])
                       + SETTINGS_ITEMS)

@@ -84,6 +84,25 @@ STALE_MS = 1500
 # applis de bureau que RTSS hooke aussi mais qui ne sont pas des jeux
 IGNORED = {"parsecd.exe", "claude.exe", "explorer.exe", "dwm.exe", "chrome.exe", "msedge.exe",
            "firefox.exe", "discord.exe", "spotify.exe", "steamwebhelper.exe", "obs64.exe"}
+# liste de l'utilisateur (réglage game_blacklist) : débuts de noms d'exécutable sans « .exe »,
+# « obs » couvre obs64, obs32, obs-browser-page…
+USER_IGNORED = ()
+
+
+def blacklist_key(name):
+    """« OBS64.exe » → « obs64 » : la forme comparée à la liste de l'utilisateur."""
+    name = (name or "").strip().lower().replace("\\", "/").rsplit("/", 1)[-1]
+    return name[:-4] if name.endswith(".exe") else name
+
+
+def set_blacklist(items):
+    global USER_IGNORED
+    USER_IGNORED = tuple(k for k in (blacklist_key(i) for i in items or ()) if k)
+
+
+def ignored(name):
+    low = (name or "").lower()
+    return low in IGNORED or blacklist_key(low).startswith(USER_IGNORED or ("\0",))
 
 
 def current_game():
@@ -93,7 +112,7 @@ def current_game():
         return None
     now = _k32.GetTickCount()
     live = [a for a in apps if (now - a["tick"]) & 0xFFFFFFFF < STALE_MS
-            and a["name"].lower() not in IGNORED]
+            and not ignored(a["name"])]
     if not live:
         return None
     fg = _foreground_pid()

@@ -40,6 +40,7 @@ from g19.qtkit import (Card, Swatch, Toggle, bind_combo, bind_slider, bind_spin,
                        palette,
                        pil_to_pixmap, slider, spin, stylesheet, title_bar, Field)
 from g19.anim import SPEED_LABELS as ANIM_SPEEDS, STYLES as ANIM_STYLES  # noqa: E402
+from g19.coverflow import STYLES as COVER_STYLES  # noqa: E402
 from g19.render import THEME_LABELS, render, theme_of  # noqa: E402
 from g19.tray import make_icon  # noqa: E402
 from g19.weather import geocode  # noqa: E402
@@ -404,6 +405,12 @@ class ConfigApp(QMainWindow):
                   "G19). Cliquer une page la montre dans l'aperçu.")
         self.fields["pages"] = Field(self._pages_get, lambda v: None)
 
+        card = self._card(lay, "Liste des écrans (touche Menu)")
+        self.choice("screen_list_style", card, "Présentation",
+                    [(k, v.capitalize()) for k, v in COVER_STYLES.items()],
+                    "Coverflow en perspective, cartes à plat, grille de miniatures, ou liste "
+                    "avec l'aperçu de l'écran choisi.", 180)
+
         card = self._card(lay, "Au démarrage")
         self.remember = QRadioButton("Rouvrir sur la dernière page affichée")
         fixed = QRadioButton("Toujours ouvrir sur :")
@@ -422,6 +429,41 @@ class ConfigApp(QMainWindow):
         card = self._card(lay, "Au lancement d'un jeu")
         self.choice("game_page", card, "Afficher la page", GAME_PAGES, width=170,
                     hint="Retour à la page d'avant une fois la partie finie.")
+        bl = line_edit(", ".join(self.s.get("game_blacklist") or []), 260,
+                       placeholder="obs, …")
+        card.row("Jamais traités comme des jeux", bl,
+                 "Début du nom d'exécutable, séparés par des virgules (« obs » couvre obs64, "
+                 "obs32…). Ni écran de jeu, ni récapitulatif. Aussi depuis le menu du G19 "
+                 "pendant une partie : « Pas un jeu ».")
+        self.fields["game_blacklist"] = Field(
+            lambda: [a.strip() for a in bl.text().split(",") if a.strip()],
+            lambda v: bl.setText(", ".join(v or [])))
+        self.measured = combo([], 200)
+        card.row("Applis mesurées en ce moment", hbox(
+            self.measured, self.button("Exclure", lambda: self._exclude_game(bl)),
+            self.button("Actualiser", self._load_measured)),
+            "Ce que RivaTuner voit tourner (jeux et applis 3D) : choisis-en une à exclure.")
+        self._load_measured()
+
+    def _load_measured(self):
+        try:
+            names = sorted({a["name"] for a in rtss.read_apps() or []}, key=str.lower)
+        except Exception:
+            names = []
+        self.measured.clear()
+        for n in names or ["(aucune)"]:
+            self.measured.addItem(n, n if names else None)
+
+    def _exclude_game(self, bl):
+        name = self.measured.currentData()
+        if not name:
+            return
+        key = rtss.blacklist_key(name)
+        items = [a.strip() for a in bl.text().split(",") if a.strip()]
+        if key not in items:
+            bl.setText(", ".join(items + [key]))
+            self.changed()
+            self._flash(f"{name} : plus traité comme un jeu.")
 
     def _pages_get(self):
         out = []
@@ -471,6 +513,9 @@ class ConfigApp(QMainWindow):
                     hint="Au-dessus de 100 %, les gris foncés et textes estompés ressortent.")
         self.slider("screen_saturation", card, "Saturation", 0, 200, 10, hint="0 % : noir et blanc.")
         self.toggle("screen_sharpen", card, "Netteté renforcée", "Contours des petits textes plus nets.")
+        self.toggle("screen_dither", card, "Dégradés lissés (tramage)",
+                    "L'écran du G19 n'a que 65 000 couleurs : sans tramage, les fonds flous "
+                    "(pochette, fond d'écran) se découpent en bandes.")
         card = self._card(lay, "Réglage à l'œil")
         card.row("Mire de réglage", hbox(self.button("Afficher la mire sur le G19",
                                                      self._show_pattern, True),

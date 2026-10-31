@@ -66,46 +66,67 @@ def _prepare_art(data):
     mask = Image.new("L", (ART, ART), 0)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, ART - 1, ART - 1), 10, fill=255)
     art.putalpha(mask)
-    bg = ImageOps.fit(img, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(18))
-    bg = ImageEnhance.Brightness(bg).enhance(0.35)
-    return art, bg, art_accent(img)
+    return art, _backdrop(img), art_accent(img)
+
+
+def _backdrop(img):
+    """Fond de la page Média : la pochette très floutée, plus colorée, assombrie pour que le
+    texte reste lisible, avec une vignette (bords plus sombres) qui donne de la profondeur."""
+    bg = ImageOps.fit(img, (W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(22))
+    bg = ImageEnhance.Color(bg).enhance(1.35)
+    bg = ImageEnhance.Brightness(bg).enhance(0.45)
+    vignette = Image.radial_gradient("L").resize((W, H)).point(lambda v: int(255 - v * 0.55))
+    return Image.composite(bg, Image.new("RGB", (W, H)), vignette)
 
 
 def art_accent(img):
-    """Couleur dominante parmi les couleurs franches de l'image, en (r, g, b) 0..1 — la
-    luminosité est ajustée à l'affichage selon le thème. None pour une image sans couleur.
+    """Couleur marquante de la pochette, en (r, g, b) 0..1 — la luminosité est ajustée à
+    l'affichage selon le thème. None pour une pochette sans vraie couleur.
 
-    Les couleurs sont regroupées par famille de teinte (pondérées par surface × intensité) :
-    on retient la famille la plus présente, pas un petit détail saturé, et sa couleur moyenne
-    plutôt qu'une teinte poussée au maximum."""
-    small = img.convert("RGB").resize((48, 48))
+    Palette de la pochette (24 couleurs) ; les nuances d'une même teinte sont regroupées et
+    leur surface additionnée, la plus franche du groupe le représente (une moyenne ternirait
+    la couleur). Chaque groupe est noté surface × vivacité² : une grande zone terne (beige,
+    brun) ne l'emporte pas sur une couleur franche bien présente, et un détail minuscule
+    compte peu. Seconde passe plus tolérante pour les pochettes très sombres."""
+    small = img.convert("RGB").resize((64, 64), Image.BOX)
     q = small.quantize(colors=24, method=Image.Quantize.MEDIANCUT)
     pal = q.getpalette()
-    bins = [[0.0, 0.0, 0.0, 0.0, 0] for _ in range(BINS)]   # poids, r, g, b, pixels
+    total = 64 * 64
+    swatches = []
     for count, idx in q.getcolors():
         r, g, b = (c / 255 for c in pal[idx * 3:idx * 3 + 3])
-        h, l, s = colorsys.rgb_to_hls(r, g, b)
-        chroma = max(r, g, b) - min(r, g, b)
-        if chroma < 0.12 or l < 0.08 or l > 0.94:   # gris, noir, blanc : pas une couleur
-            continue
-        w = count * chroma ** 1.5
-        k = int(h * BINS) % BINS
-        acc = bins[k]
-        acc[0] += w
-        acc[1] += w * r
-        acc[2] += w * g
-        acc[3] += w * b
-        acc[4] += count
-    # une famille de teinte coupée en deux par les cases compte quand même entière
-    score = [bins[k][0] + 0.5 * (bins[k - 1][0] + bins[(k + 1) % BINS][0]) for k in range(BINS)]
-    k = max(range(BINS), key=score.__getitem__)
-    w, r, g, b, pixels = bins[k]
-    if not w or pixels < 48 * 48 * 0.02:
-        return None             # pochette (presque) en noir et blanc : accent par défaut
-    return r / w, g / w, b / w
+        h, _s, v = colorsys.rgb_to_hsv(r, g, b)
+        swatches.append((h, v, max(r, g, b) - min(r, g, b), count / total, (r, g, b)))
+    for min_chroma, min_v in ((0.16, 0.22), (0.12, 0.18)):
+        best = _pick_accent([x for x in swatches if x[2] >= min_chroma and x[1] >= min_v])
+        if best:
+            return best
+    return None                 # pochette (presque) en noir et blanc : accent par défaut
 
 
-BINS = 18
+def _pick_accent(colorful):
+    groups = []
+    for x in sorted(colorful, key=lambda x: -x[2]):          # la plus franche d'abord
+        for gr in groups:
+            dh = abs(x[0] - gr[0][0])
+            if min(dh, 1 - dh) < 0.045:                        # même teinte (± 16°)
+                gr.append(x)
+                break
+        else:
+            groups.append([x])
+    best, best_score = None, 0.0
+    for gr in groups:
+        area = sum(x[3] for x in gr)
+        rep = max(gr, key=lambda x: x[2] * (0.6 + 0.4 * x[3] / area))
+        v, chroma = rep[1], rep[2]
+        vivid = min(1.0, chroma / 0.6)
+        light = 1 - abs(v - 0.75) / 0.75                       # ni trop sombre, ni délavée
+        score = area ** 0.5 * vivid ** 2 * (0.6 + 0.4 * light)
+        if area < 0.012:
+            score *= 0.4                                       # un détail minuscule
+        if score > best_score:
+            best, best_score = rep[4], score
+    return best
 
 
 class MediaMonitor:

@@ -208,7 +208,7 @@ class Toggle(QAbstractButton):
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(42, 22)
         self._pos = 1.0 if checked else 0.0
-        self._anim = QPropertyAnimation(self, b"pos", self)
+        self._anim = QPropertyAnimation(self, b"knob", self)   # pas « pos » : la position du widget
         self._anim.setDuration(140)
         self._anim.setEasingCurve(QEasingCurve.OutCubic)
         self.toggled.connect(self._animate)
@@ -226,7 +226,7 @@ class Toggle(QAbstractButton):
         self._pos = v
         self.update()
 
-    pos = Property(float, _get_pos, _set_pos)
+    knob = Property(float, _get_pos, _set_pos)
 
     def setChecked(self, on):
         super().setChecked(on)

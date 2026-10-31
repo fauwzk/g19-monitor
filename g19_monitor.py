@@ -44,13 +44,14 @@ def _startup_failed():
 
 
 try:
-    from g19 import config, instance, mixer, night, remote, screen, settings, version
+    from g19 import config, instance, mixer, night, remote, rtss, screen, settings, version
     from g19.alerts import AlertMonitor
     from g19.anim import Transitions
     from g19.updater import Updater
     from g19.amd_driver import AmdDriver
     from g19.docker_mon import DockerMonitor
     from g19.fuel import FuelMonitor
+    from g19.dnd import DoNotDisturb
     from g19.screencap import ScreenMirror
     from g19.streaming import Streaming
     from g19.away import Away
@@ -113,7 +114,7 @@ def make_ctx():
                net=Pinger(lambda: settings.current().get("ping_target")),
                sysw=SystemWatch(settings.current), git=GitStatus(), away=Away(),
                streaming=Streaming(), docker=DockerMonitor(), mirror=ScreenMirror(),
-               fuel=FuelMonitor(),
+               fuel=FuelMonitor(), dnd=DoNotDisturb(),
                driver=AmdDriver(),
                updater=Updater(instance.APP_DIR,
                                lambda: settings.current().get("auto_update", True)))
@@ -573,6 +574,7 @@ def run():
             now = time.time()
             dog.alive(now)
             if now - last_sample >= 1:
+                rtss.set_blacklist(watch.settings.get("game_blacklist"))
                 c.night = night.is_night(watch.settings, now)
                 c.settings = night.effective(watch.settings, c.night)
             cfg = c.settings
@@ -707,6 +709,8 @@ def run():
                 last_fps = now
             if page == "gpu" and game:
                 c.gpu.sample_frametime()    # graphe des temps d'image : une lecture par image
+            if game and not in_game:
+                log.info("jeu détecté : %s (%.0f FPS)", game["name"], game["fps"])
             if game and not in_game and cfg["game_page"] in pages:
                 if page != cfg["game_page"]:
                     before_game = page          # on y reviendra après la partie
@@ -762,7 +766,8 @@ def run():
                         menu.update_status = c.updater.status if c.updater else ""
                         profs = mixer.profiles(c)
                         menu.audio_active = c.volume.active_profile(profs)
-                        menu.show(cfg, page_action(page, c), profs)
+                        menu.show(cfg, page_action(page, c), profs,
+                                  c.gpu.game["name"] if c.gpu.game else None)
                     continue
                 if fan_panel is not None:
                     ids = [pid for pid, _ in FAN_CHIPS]
@@ -784,7 +789,8 @@ def run():
                     fan_panel = ids.index(cfg["fan_profile"]) if cfg["fan_profile"] in ids else 0
                     continue
                 if b == "menu" and not menu.open:
-                    cover.show(pages, page)     # Menu : coverflow des écrans + paramètres
+                    # Menu : liste des écrans + paramètres, dans le style choisi
+                    cover.show(pages, page, cfg.get("screen_list_style", "coverflow"))
                     continue
                 if menu.open:
                     # réglages illisibles un instant (écriture en cours ailleurs) : la
@@ -799,6 +805,18 @@ def run():
                         restart = True
                     elif cmd and cmd[0] == "audio_profile":
                         apply_audio_profile(c, cmd[1])
+                    elif cmd and cmd[0] == "ignore_game":
+                        key = rtss.blacklist_key(cmd[1])
+                        items = list(cfg.get("game_blacklist") or [])
+                        if key and key not in items:
+                            saved = guarded("liste des jeux", settings.save_changes,
+                                            {"game_blacklist": items + [key]})
+                            if saved:
+                                c.settings = cfg = saved
+                                watch.poll()
+                                rtss.set_blacklist(cfg["game_blacklist"])
+                                c.saved_event = (f"{cmd[1]} n'est plus un jeu",
+                                                 "retrait : utilitaire → Pages", now)
                     elif cmd and cmd[0] == "update":
                         c.updater.check_now()
                         c.saved_event = ("Mises à jour", "vérification sur GitHub…", time.time())
@@ -834,7 +852,9 @@ def run():
                     c.vpn.toggle()
                 elif page == "speedtest" and b == "ok":
                     c.speedtest.toggle()
-                elif page == "notifs" and b == "ok":
+                elif page == "notifs" and b == "ok" and c.dnd and c.dnd.supported:
+                    c.dnd.toggle()                 # « Ne pas déranger » de Windows
+                elif page == "notifs" and b in ("ok", "down"):
                     c.notifs.clear()
                 elif page == "claude" and b == "ok":
                     sel = c.sessions[c.claude_sel] if c.claude_sel < len(c.sessions) else None
@@ -903,6 +923,7 @@ def run():
                 latest = c.notifs.items[0] if c.notifs.items else None
                 # les notifs de l'appli Claude doublonnent le voyant Claude (flash vert) : ignorées
                 if (cfg["backlight"] and cfg["backlight_notifs"] and latest and not quiet
+                        and not (c.dnd and c.dnd.active)
                         and not ignored(c, latest) and latest["app"].lower() != "claude"):
                     # WhatsApp en vert, Snapchat en jaune, les autres en blanc
                     backlight.flash(flash_kind(latest), cfg["blinks_notifs"], blink_ms(cfg))
@@ -968,6 +989,7 @@ def run():
                 pattern_at = None
             frame_img = screen.adjust(frame_img, cfg)
             frame_img = night.dim(frame_img, cfg, c.night)
+            frame_img = screen.dither(frame_img, cfg)     # dégradés sans bandes en 16 bits
             lcd.show(frame_img)
             mirror.write(frame_img, now)
             frames += 1

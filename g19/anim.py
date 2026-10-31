@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageEnhance
 HEADER = 25              # px de la barre du haut
 SPEEDS = {"fast": 0.15, "normal": 0.24, "slow": 0.38}   # durée (s)
 SPEED_LABELS = {"fast": "rapide", "normal": "normale", "slow": "lente"}
+WAKE = 0.5               # s : apparition au démarrage et au réveil
 
 
 def _ease(k):
@@ -108,8 +109,13 @@ class Transitions:
         ordre des pages, pour le sens de l'animation ; `style` : celle des changements de
         page (les autres écrans arrivent en fondu)."""
         img = img.convert("RGB") if img.mode != "RGB" else img
-        if not enabled or style == "none":
+        if not enabled:
             self.current = None
+        elif self.key is None:
+            # tout premier écran (démarrage, relance) : il apparaît depuis le noir
+            self.current = (Image.new("RGB", img.size), now, fade, 0, WAKE)
+        elif style == "none" and key[0] == self.key[0] == "page" and key[1] != self.key[1]:
+            self.current = None       # changement de page sans animation
         elif self.key is not None and key != self.key and self.prev is not None \
                 and self.prev.size == img.size:
             fn, direction = fade, 0
@@ -124,7 +130,10 @@ class Transitions:
                     direction = -1
                 else:
                     direction = 1 if j > i else -1
-            self.current = (self.prev, now, fn, direction, SPEEDS.get(speed, SPEEDS["normal"]))
+            duration = SPEEDS.get(speed, SPEEDS["normal"])
+            if self.key[0] == "idle":
+                duration = WAKE           # réveil après l'horloge de repos : plus doux
+            self.current = (self.prev, now, fn, direction, duration)
         self.key, self.prev = key, img
         if not self.current:
             return img
