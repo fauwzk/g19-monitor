@@ -1,5 +1,5 @@
-"""Suivi des sessions de jeu : jeu détecté par RTSS (tous launchers), infos Steam si dispo,
-historique local."""
+"""Suivi des sessions de jeu : jeu détecté par RTSS (tous launchers) ou, sans RTSS, par sa
+fenêtre plein écran ; infos Steam si dispo, historique local."""
 import re
 import threading
 import time
@@ -141,7 +141,8 @@ class GameTracker:
         s = self.session
         if game and s and game["path"] == s.exe:
             s.last_seen = now
-            s.fps.append(game["fps"])
+            if game["fps"] is not None:      # None : jeu vu sans RTSS
+                s.fps.append(game["fps"])
             s.temp_max = max(s.temp_max, sensors.get("hotspot", sensors.get("temp", 0.0)))
             s.cpu_temp_max = max(s.cpu_temp_max, sensors.get("cpu_temp") or 0.0)
             if sensors.get("power"):

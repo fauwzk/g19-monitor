@@ -83,7 +83,10 @@ _k32.GetTickCount.restype = wintypes.DWORD
 STALE_MS = 1500
 # applis de bureau que RTSS hooke aussi mais qui ne sont pas des jeux
 IGNORED = {"parsecd.exe", "claude.exe", "explorer.exe", "dwm.exe", "chrome.exe", "msedge.exe",
-           "firefox.exe", "discord.exe", "spotify.exe", "steamwebhelper.exe", "obs64.exe"}
+           "firefox.exe", "discord.exe", "spotify.exe", "steamwebhelper.exe", "obs64.exe",
+           # lecteurs vidéo : en plein écran, le pilote peut leur compter des images
+           "vlc.exe", "mpv.exe", "mpc-hc64.exe", "mpc-be64.exe", "potplayermini64.exe",
+           "wmplayer.exe", "applicationframehost.exe", "powerpnt.exe"}
 # liste de l'utilisateur (réglage game_blacklist) : débuts de noms d'exécutable sans « .exe »,
 # « obs » couvre obs64, obs32, obs-browser-page…
 USER_IGNORED = ()
@@ -105,16 +108,19 @@ def ignored(name):
     return low in IGNORED or blacklist_key(low).startswith(USER_IGNORED or ("\0",))
 
 
-def current_game():
-    """L'appli au premier plan si RTSS la mesure, sinon le jeu le plus récemment actif."""
+def current_game(fps_probe=None):
+    """L'appli au premier plan si RTSS la mesure, sinon le jeu le plus récemment actif ;
+    à défaut (RTSS absent ou désactivé pour ce jeu), le jeu en plein écran au premier plan,
+    sans FPS. `fps_probe` : FPS mesurés par le pilote, pour reconnaître aussi les jeux installés
+    hors des launchers."""
+    live = []
     apps = read_apps()
-    if not apps:
-        return None
-    now = _k32.GetTickCount()
-    live = [a for a in apps if (now - a["tick"]) & 0xFFFFFFFF < STALE_MS
-            and not ignored(a["name"])]
+    if apps:
+        now = _k32.GetTickCount()
+        live = [a for a in apps if (now - a["tick"]) & 0xFFFFFFFF < STALE_MS
+                and not ignored(a["name"])]
     if not live:
-        return None
+        return window_game(fps_probe)
     fg = _foreground_pid()
     for a in live:
         if a["pid"] == fg:
@@ -122,6 +128,100 @@ def current_game():
     return max(live, key=lambda a: a["tick"])
 
 
+# --- détection sans RTSS : fenêtre plein écran d'un jeu ---------------------------------------
+
+# dossiers d'installation des launchers (chemins en minuscules, séparateurs « / »)
+GAME_DIRS = ("/steamapps/common/", "/epic games/", "/riot games/", "/gog galaxy/games/",
+             "/ubisoft game launcher/games/", "/ea games/", "/electronic arts/",
+             "/xboxgames/", "/battle.net/", "/blizzard entertainment/")
+GAME_EXES = {"cs2", "valorant-win64-shipping", "league of legends", "r5apex",
+             "fortniteclient-win64-shipping", "rocketleague", "overwatch", "gta5",
+             "eldenring", "javaw", "rainbowsix", "rainbowsix_be"}
+
+_u32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+_u32.MonitorFromWindow.restype = wintypes.HMONITOR
+_u32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+_u32.IsWindow.argtypes = [wintypes.HWND]
+_u32.IsIconic.argtypes = [wintypes.HWND]
+
+
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+
+_u32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(_MonitorInfo)]
+
+_paths = {}            # pid → chemin de l'exécutable (le plus coûteux à lire)
+_window = None         # dernier jeu trouvé ainsi : {"pid", "path", "name", "hwnd", …}
+
+
+def _exe_path(pid):
+    if pid not in _paths:
+        try:
+            import psutil
+            _paths[pid] = psutil.Process(pid).exe()
+        except Exception:
+            _paths[pid] = ""
+        if len(_paths) > 64:
+            _paths.pop(next(iter(_paths)))
+    return _paths[pid]
+
+
+def _fullscreen(hwnd):
+    """La fenêtre couvre-t-elle tout son écran (plein écran exclusif ou fenêtré sans bord) ?"""
+    r = wintypes.RECT()
+    if not _u32.GetWindowRect(hwnd, ctypes.byref(r)):
+        return False
+    mi = _MonitorInfo(cbSize=ctypes.sizeof(_MonitorInfo))
+    if not _u32.GetMonitorInfoW(_u32.MonitorFromWindow(hwnd, 2), ctypes.byref(mi)):
+        return False
+    m = mi.rcMonitor
+    return r.left <= m.left and r.top <= m.top and r.right >= m.right and r.bottom >= m.bottom
+
+
+def _rendering(path, fps_probe):
+    """Appli plein écran hors launcher : jeu si le pilote lui compte des images."""
+    low = path.lower().replace("\\", "/")
+    if not low.endswith(".exe") or ignored(low.rsplit("/", 1)[-1]) or "/windows/" in low:
+        return False
+    try:
+        return bool(fps_probe())
+    except Exception:
+        return False
+
+
+def looks_like_game(path):
+    low = path.lower().replace("\\", "/")
+    if not low.endswith(".exe") or ignored(low.rsplit("/", 1)[-1]):
+        return False
+    return any(d in low for d in GAME_DIRS) or blacklist_key(low) in GAME_EXES
+
+
+def window_game(fps_probe=None):
+    """Jeu détecté sans RTSS : fenêtre au premier plan en plein écran, d'un exécutable installé
+    par un launcher (ou connu), ou de n'importe quelle appli dont le pilote mesure les images
+    (`fps_probe`, hors Windows et liste d'exclusion). Il reste détecté pendant un alt-tab tant que
+    sa fenêtre existe et n'est pas réduite. FPS laissés à l'appelant : fps = None."""
+    global _window
+    hwnd = _u32.GetForegroundWindow()
+    if hwnd and _fullscreen(hwnd):
+        pid = _foreground_pid()
+        path = _exe_path(pid) if pid else ""
+        if path and (looks_like_game(path) or (fps_probe and _rendering(path, fps_probe))):
+            if not _window or _window["pid"] != pid:
+                _window = {"pid": pid, "path": path,
+                           "name": path.replace("\\", "/").rsplit("/", 1)[-1],
+                           "fps": None, "frametime_ms": None, "hwnd": hwnd}
+            return _window
+    w = _window
+    if w and _u32.IsWindow(w["hwnd"]) and not _u32.IsIconic(w["hwnd"]) and not ignored(w["name"]):
+        return w
+    _window = None
+    return None
+
+
 if __name__ == "__main__":
     for a in read_apps() or []:
         print(a)
+    print("jeu :", current_game())

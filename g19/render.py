@@ -1340,7 +1340,11 @@ def page_gpu(d, st, gpu, t, power_max=315, view="both"):
 
     # FPS
     panel(d, (6, 28, 112, 92), 6)
-    if game:
+    if game and game["fps"] is None:      # jeu vu sans RTSS : pas de mesure
+        d.text((59, 36), "FPS", font=font(10, True), fill=MUTED, anchor="mt")
+        d.text((59, 60), "—", font=font(24, True), fill=MUTED, anchor="mm")
+        d.text((59, 84), "sans RTSS", font=font(10), fill=MUTED, anchor="mb")
+    elif game:
         fps = game["fps"]
         d.text((59, 36), "FPS", font=font(10, True), fill=MUTED, anchor="mt")
         d.text((59, 60), f"{fps:.0f}", font=font(30, True),
@@ -2733,6 +2737,9 @@ def page_games(img, d, games, t):
         pts = downsample(s.fps, 150)
         if len(pts) >= 2:
             sparkline(d, 14, 184, W - 28, 46, pts, ACCENT, vmax=max(pts) * 1.15, panel=None)
+        elif not s.fps:
+            d.text((W // 2, 206), "FPS non mesurés : RivaTuner ne suit pas ce jeu", font=font(10),
+                   fill=dim(MUTED, 0.8), anchor="mm")
         return
 
     d.text((10, 30), "Derniers jeux", font=font(13, True), fill=TEXT)
@@ -2740,7 +2747,7 @@ def page_games(img, d, games, t):
     if not recent:
         d.text((W // 2, 120), "Aucune session enregistrée", font=font(14, True), fill=MUTED,
                anchor="mm")
-        d.text((W // 2, 142), "lance un jeu : RTSS le détecte avec ses FPS", font=font(11),
+        d.text((W // 2, 142), "lance un jeu en plein écran : il sera détecté", font=font(11),
                fill=dim(MUTED, 0.7), anchor="mm")
         return
     d.text((W - 10, 32), f"aujourd'hui {fmt_duration(games.today_seconds(t))}", font=font(11),

@@ -1,8 +1,9 @@
 """Agrège les capteurs GPU/CPU : MSI Afterburner, puis LibreHardwareMonitor pour compléter,
-et RTSS pour les FPS."""
+et RTSS pour les FPS (pilote AMD à défaut)."""
 from collections import deque
 
 from . import afterburner, rtss
+from .adlx import AmdFps
 from .lhm import LhmClient
 
 AB_MAP = {
@@ -31,6 +32,7 @@ class GpuMonitor:
 
     def __init__(self):
         self.lhm = LhmClient()
+        self.amd = AmdFps()
         self.s = {}
         self.sources = []
         self.game = None
@@ -62,19 +64,27 @@ class GpuMonitor:
         self.temp_max = max(self.temp_max, s.get("hotspot", s.get("temp", 0.0)))
 
     def sample_fps(self):
-        """À chaque image : FPS du jeu au premier plan."""
-        game = rtss.current_game()
-        if game and game["fps"] > 0:
+        """À chaque image : FPS du jeu au premier plan. Jeu vu sans RTSS : FPS du pilote AMD,
+        sinon fps None."""
+        game = rtss.current_game(self.amd.fps)
+        if game and game["fps"] is not None and game["fps"] <= 0:
+            game = None
+        if game and game["fps"] is None:
+            fps = self.amd.fps()
+            if fps:
+                game = {**game, "fps": float(fps), "frametime_ms": 1000.0 / fps, "source": "AMD"}
+        if game:
             if not self.game or self.game["pid"] != game["pid"]:
                 self.fps_hist.clear()
                 self.ft_hist.clear()
-            self.fps_hist.append(game["fps"])
-        self.game = game if game and game["fps"] > 0 else None
+            if game["fps"] is not None:
+                self.fps_hist.append(game["fps"])
+        self.game = game
         return self.game
 
     def sample_frametime(self):
         """À chaque image du G19 : temps de la dernière image du jeu, pour le graphe."""
-        if not self.game:
+        if not self.game or "slot" not in self.game:
             return
         try:
             r = rtss.frametime(self.game)

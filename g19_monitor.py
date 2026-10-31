@@ -227,7 +227,7 @@ def tooltip(c, page):
     parts = [f"CPU {c.stats.cpu:.0f}%", f"GPU {s.get('load', c.stats.gpu):.0f}%"]
     if s.get("temp"):
         parts[-1] += f" {s['temp']:.0f}°C"
-    if c.gpu.game:
+    if c.gpu.game and c.gpu.game["fps"] is not None:
         parts.append(f"{c.gpu.game['fps']:.0f} FPS")
     lines = ["G19 Monitor — " + settings.PAGE_TITLES.get(page, page), " · ".join(parts)]
     if c.sessions:
@@ -710,7 +710,9 @@ def run():
             if page == "gpu" and game:
                 c.gpu.sample_frametime()    # graphe des temps d'image : une lecture par image
             if game and not in_game:
-                log.info("jeu détecté : %s (%.0f FPS)", game["name"], game["fps"])
+                log.info("jeu détecté : %s (%s)", game["name"],
+                         f"{game['fps']:.0f} FPS" if game["fps"] is not None
+                         else "plein écran, sans RTSS")
             if game and not in_game and cfg["game_page"] in pages:
                 if page != cfg["game_page"]:
                     before_game = page          # on y reviendra après la partie
