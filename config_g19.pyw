@@ -506,8 +506,13 @@ class ConfigApp(QMainWindow):
                     "Quand le micro est coupé ou rétabli (Windows ou bouton du casque HyperX), "
                     "son état s'affiche quelques instants par-dessus l'écran du G19.")
         self.spin("fps", card, "Images par seconde", 2, 60,
-                  hint="Jusqu'à 60. Une page fixe ne coûte presque rien ; la fluidité réelle "
-                       "s'affiche dans le menu du G19.")
+                  hint="Au repos, sur une page fixe. La fluidité réelle s'affiche dans le "
+                       "menu du G19.")
+        self.toggle("fps_adaptive", card, "Plus fluide quand ça bouge",
+                    "Animations, défilements, fenêtres et vumètres passent au rythme "
+                    "ci-dessous, puis l'écran revient au rythme de repos.")
+        self.spin("fps_motion", card, "Images par seconde en mouvement", 15, 60,
+                  hint="Jusqu'à 60.")
         card = self._card(lay, "Jauges et encarts")
         self.spin("gpu_power_max", card, "Puissance max. du GPU", 100, 700, 5, "W",
                   "Échelle de la jauge Puissance de l'écran GPU.")

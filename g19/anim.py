@@ -2,7 +2,7 @@
 enchaîné à l'ouverture ou à la fermeture d'un menu, du récapitulatif, de l'horloge…
 
 Pour les styles qui balaient l'écran, la barre du haut reste fixe : elle change sur place."""
-from PIL import Image, ImageDraw, ImageEnhance
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance
 
 HEADER = 25              # px de la barre du haut
 SPEEDS = {"fast": 0.15, "normal": 0.24, "slow": 0.38}   # durée (s)
@@ -143,3 +143,37 @@ class Transitions:
             self.current = None
             return img
         return fn(old, img, _ease(k), direction)
+
+
+MOTION_HOLD = 0.4        # s de rythme rapide après la dernière image qui a changé
+
+
+class MotionPacer:
+    """Fluidité adaptative : rythme rapide tant que l'image envoyée à l'écran bouge
+    (animation, défilement, vumètre…), rythme de repos sur une page fixe. Deux images de suite
+    qui changent lancent le mouvement (un relevé des capteurs par seconde ne compte pas) ; une
+    touche le lance tout de suite, l'animation qu'elle déclenche démarrant ainsi sans retard."""
+
+    def __init__(self):
+        self.last_motion = float("-inf")
+        self._last = None
+        self._changed_before = False
+
+    def moving(self, now):
+        return now - self.last_motion < MOTION_HOLD
+
+    def key(self, now):
+        self.last_motion = now
+
+    def frame(self, img, now):
+        changed = self._last is None or bool(ImageChops.difference(self._last, img).getbbox())
+        if changed and (self._changed_before or self.moving(now)):
+            self.last_motion = now
+        self._changed_before, self._last = changed, img
+
+    def step(self, now, fps, motion_fps, adaptive=True):
+        """Durée d'une image (s) : rythme de repos, ou rapide pendant un mouvement."""
+        step = 1 / max(1, fps)
+        if adaptive and self.moving(now):
+            step = min(step, 1 / max(5, motion_fps))
+        return step

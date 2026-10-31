@@ -47,7 +47,7 @@ try:
     from g19 import (config, discord_panel, instance, mixer, night, remote, rtss, screen,
                      settings, version)
     from g19.alerts import AlertMonitor
-    from g19.anim import Transitions
+    from g19.anim import MotionPacer, Transitions
     from g19.updater import Updater
     from g19.amd_driver import AmdDriver
     from g19.docker_mon import DockerMonitor
@@ -566,6 +566,7 @@ def run():
     shown_page = page
     last_sample = last_claude = last_watch = last_fps = last_proc = 0.0
     frames, fps_window = 0, time.time()
+    pacer = MotionPacer()       # fluidité adaptative
     game = None
     reload_at = None
     in_game = False
@@ -756,6 +757,7 @@ def run():
                 page, before_game = page_after_game(page, before_game, cfg, pages), None
             for b in [*lcd.pressed(), *keys.pressed()]:
                 c.away.poke(now)
+                pacer.key(now)          # une touche lance souvent une animation : on accélère
                 if pattern_at:
                     pattern_at = None           # n'importe quelle touche ferme la mire
                     continue
@@ -1020,6 +1022,7 @@ def run():
             frame_img = screen.adjust(frame_img, cfg)
             frame_img = night.dim(frame_img, cfg, c.night)
             frame_img = screen.dither(frame_img, cfg)     # dégradés sans bandes en 16 bits
+            pacer.frame(frame_img, now)
             lcd.show(frame_img)
             mirror.write(frame_img, now)
             frames += 1
@@ -1030,9 +1033,13 @@ def run():
                 if first:
                     log.info("fluidité : %.1f images/s (réglage %s)", menu.real_fps, cfg["fps"])
             lcd.update()
+            # fluidité adaptative : rythme rapide tant que l'image bouge (et un instant après),
+            # rythme de repos sur une page fixe ; pas pour la recopie d'écran (capture coûteuse)
+            step = pacer.step(now, cfg["fps"], cfg.get("fps_motion", 60),
+                              cfg.get("fps_adaptive", True) and
+                              not (page == "screen" and not cover.open and not menu.open))
             # pendant la fenêtre de volume, au moins 30 images/s pour que la barre glisse ; un
             # changement de volume réveille la boucle tout de suite
-            step = 1 / cfg["fps"]
             pop = popup_event(c, cfg)
             if pop and now - pop[1] < VOLUME_POPUP:
                 step = min(step, 1 / 30)
