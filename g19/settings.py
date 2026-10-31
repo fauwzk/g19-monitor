@@ -75,7 +75,8 @@ DEFAULTS = {
     "media_toasts": True,            # bandeau au changement de musique / média
     "device_toasts": True,           # bandeau à la connexion d'un périphérique
     "voice_toasts": True,            # bandeau quand quelqu'un rejoint / quitte l'appel Discord
-    "steam_toasts": True,            # bandeau quand un ami Steam se connecte
+    "steam_toasts": True,            # bandeau quand un ami Steam se connecte ou lance un jeu
+    "achievements": True,            # succès Steam débloqués en jeu : bandeau et récapitulatif
     "stream_toasts": True,           # bandeau quand quelqu'un se connecte en streaming
     "game_blacklist": ["obs"],       # jamais traités comme des jeux (début du nom d'exécutable)
     "screen_list_style": "coverflow",  # touche Menu : coverflow, flat, grid, list

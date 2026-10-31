@@ -92,6 +92,7 @@ class Session:
         self.start = now
         self.last_seen = now
         self.fps = []           # un échantillon par seconde
+        self.achievements = []  # succès Steam débloqués pendant la partie (achievements.py)
         self.temp_max = 0.0
         self.cpu_temp_max = 0.0
         self.power_sum = 0.0
@@ -117,7 +118,9 @@ class Session:
                 "temp_max": self.temp_max or None,
                 "cpu_temp_max": self.cpu_temp_max or None, "fps_max": s.get("max"),
                 "fps_curve": _curve(self.fps, 60),
-                "power_avg": self.power_sum / self.power_n if self.power_n else None}
+                "power_avg": self.power_sum / self.power_n if self.power_n else None,
+                "achievements": [{"name": a["name"], "rarity": a.get("rarity")}
+                                 for a in self.achievements]}
 
 
 class GameTracker:

@@ -568,7 +568,11 @@ class ConfigApp(QMainWindow):
                 ("media_toasts", "Changement de musique / média", None),
                 ("device_toasts", "Périphérique connecté ou retiré",
                  "USB, Bluetooth et audio, avec la batterie quand il en a une."),
-                ("steam_toasts", "Ami Steam connecté", "Avec sa photo de profil."),
+                ("steam_toasts", "Ami Steam connecté ou qui lance un jeu",
+                 "Avec sa photo de profil, aux couleurs de Steam."),
+                ("achievements", "Succès Steam débloqué",
+                 "En jeu, avec son icône et sa rareté ; listés aussi à la fin de la partie. "
+                 "Clé API Steam et détails des jeux du profil publics."),
                 ("voice_toasts", "Arrivée / départ dans l'appel Discord", None),
                 ("stream_toasts", "Connexion en streaming à ce PC",
                  "Moonlight (via Sunshine) ou Parsec, voyant rouge tant que ça dure."),

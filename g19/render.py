@@ -370,6 +370,7 @@ class Ctx:
     fans: object = None
     usage: object = None         # claude_usage.ClaudeUsage
     steam: object = None         # steam_live.SteamLive
+    achievements: object = None  # achievements.Achievements : succès Steam en jeu
     night: bool = False          # mode nuit en cours
     history: object = None       # history.History
     batteries: object = None     # battery.Batteries
@@ -2903,12 +2904,21 @@ def toast_candidates(c, page, t):
     if wn and wn.items and c.settings["win_toasts"] and page != "notifs" and not quiet_win:
         n = wn.items[0]
         if not ignored(c, n):
-            cands.append((wn.last_time, {"page": "notifs", "source": n["app"], "title": n["title"],
-                                         "body": n["body"], "icon": n["icon"], "color": ACCENT}))
+            # notification du client Steam (invitation, message…) : aux couleurs de Steam
+            steam = "steam" in (n["app"] or "").casefold()
+            cands.append((wn.last_time, {"page": "steam" if steam else "notifs",
+                                         "source": n["app"], "title": n["title"],
+                                         "body": n["body"], "icon": n["icon"],
+                                         "color": STEAM_BLUE if steam else ACCENT}))
     sf = c.steam.event if c.steam and c.settings.get("steam_toasts", True) else None
     if sf:
         cands.append((sf[3], {"page": "steam", "source": "Steam", "title": sf[0], "body": sf[1], "icon": sf[2],
                               "color": STEAM_BLUE}))
+    ach = c.achievements.event if c.achievements and c.settings.get("achievements", True) \
+        else None
+    if ach:
+        cands.append((ach[3], {"page": "games", "source": "Succès Steam", "title": ach[0],
+                               "body": ach[1], "icon": ach[2], "color": STEAM_BLUE}))
     st = c.streaming.event if c.streaming and c.settings.get("stream_toasts", True) else None
     if st:
         cands.append((st[2], {"source": "Streaming", "title": st[0], "body": st[1], "icon": None,
@@ -4099,9 +4109,23 @@ def render_recap(c, rec, t, shown_at):
     chip(d, 6 + 2 * (cw2 + 4), 162, cw2, "GPU moy.", val("power_avg", suffix=" W"))
 
     curve = rec.get("fps_curve") or []
+    won = rec.get("achievements") or []
     panel(d, (6, 196, W - 6, 232), 5)
-    d.text((12, 200), "FPS", font=font(9, True), fill=MUTED)
-    if len(curve) >= 2:
+    if won:
+        # les plus rares d'abord
+        won = sorted(won, key=lambda a: a.get("rarity") if a.get("rarity") is not None else 101)
+        d.text((12, 200), f"🏆 {len(won)} SUCCÈS", font=font(9, True), fill=STEAM_BLUE)
+        rare = won[0]
+        line = rare["name"] + (f" · {rare['rarity']:.1f} %".replace(".", ",")
+                               if rare.get("rarity") is not None else "")
+        d.text((12, 216), fit(d, line, font(12, True), W - 36), font=font(12, True), fill=TEXT,
+               anchor="lm")
+        if len(won) > 1:
+            more = ", ".join(a["name"] for a in won[1:])
+            d.text((12, 228), fit(d, "et " + more, font(9), W - 36), font=font(9), fill=MUTED,
+                   anchor="lm")
+    elif len(curve) >= 2:
+        d.text((12, 200), "FPS", font=font(9, True), fill=MUTED)
         sparkline(d, 36, 199, W - 48, 30, curve, ACCENT, vmax=max(curve) * 1.15, panel=None)
     # temps restant avant fermeture automatique
     left = max(0.0, 1 - (t - shown_at) / RECAP_SECONDS)

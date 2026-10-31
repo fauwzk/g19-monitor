@@ -60,6 +60,7 @@ try:
     from g19.claude_status import claude_running, read_sessions
     from g19.claude_usage import ClaudeUsage
     from g19.steam_live import SteamLive
+    from g19.achievements import Achievements
     from g19.history import History
     from g19.battery import Batteries
     from g19.devices import DeviceWatcher
@@ -106,11 +107,13 @@ def setup_logging():
 
 def make_ctx():
     batteries = Batteries()
+    steam = SteamLive()
     return Ctx(stats=SystemStats(), gpu=GpuMonitor(), sessions=[], settings=settings.load(),
                volume=VolumeMonitor(), games=GameTracker(), discord=DiscordClient(),
                notifs=WindowsNotifications(), alerts=AlertMonitor(), speedtest=SpeedTest(),
                weather=WeatherMonitor(lambda: settings.load()["weather_city"]),
-               vpn=VpnMonitor(), lyrics=Lyrics(), usage=ClaudeUsage(), steam=SteamLive(),
+               vpn=VpnMonitor(), lyrics=Lyrics(), usage=ClaudeUsage(), steam=steam,
+               achievements=Achievements(steam._steamid),
                history=History(), batteries=batteries, devices=DeviceWatcher(batteries),
                net=Pinger(lambda: settings.current().get("ping_target")),
                sysw=SystemWatch(settings.current), git=GitStatus(), away=Away(),
@@ -321,6 +324,17 @@ def load_toast_log():
     items = config.load(TOAST_LOG, []) or []
     return deque((n for n in items if isinstance(n, dict) and n.get("at")),
                  maxlen=TOAST_LOG_SIZE)
+
+
+def follow_achievements(c, cfg):
+    """Succès Steam : suivis pendant une partie d'un jeu Steam ; la session de jeu garde la
+    liste de ceux débloqués (récapitulatif de fin de partie)."""
+    s = c.games.session if c.games else None
+    if s and s.appid and cfg.get("achievements", True):
+        s.achievements = c.achievements.unlocked
+        c.achievements.watch(s.appid)
+    else:
+        c.achievements.watch(None)
 
 
 def log_toasts(c, cands):
@@ -589,6 +603,7 @@ def run():
                 guarded("ventilateurs", c.fans.update, cfg["fan_profile"], c.gpu.s,
                         cfg["fan_safe_cpu"], cfg["fan_safe_gpu"], cfg["fan_recover_seconds"])
                 guarded("jeux", c.games.update, c.gpu.game, c.gpu.s, now)
+                guarded("succès Steam", follow_achievements, c, cfg)
                 guarded("alertes", c.alerts.update, c, now)
                 guarded("historique", c.history.add, c.stats, c.gpu.s, now)
                 guarded("réseau", c.net.check_alert, bool(c.gpu.game), now)

@@ -89,6 +89,7 @@ class SteamLive:
         self._friend_ids_at = 0.0
         self._key = None
         self._online = None      # steamid des amis en ligne au dernier passage (None : premier)
+        self._playing = {}       # steamid → jeu en cours au dernier passage
         self.event = None        # (nom, texte, avatar, horodatage) : un ami vient de se connecter
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -273,17 +274,27 @@ class SteamLive:
             rank = {"en ligne": 1, "occupé": 2, "absent": 3}
             online.sort(key=lambda f: (0 if f["game"] else rank.get(f["state"], 4),
                                        f["name"].lower()))
-            # bandeau pour les amis qui viennent de se connecter (pas au premier passage)
+            # bandeau pour les amis qui viennent de se connecter ou de lancer un jeu (pas au
+            # premier passage)
             now_ids = {f["id"] for f in online}
             if self._online is not None:
                 new = [f for f in online if f["id"] not in self._online]
-                if new:
+                started = [f for f in online if f["id"] in self._online and f["game"]
+                           and f["game"] != self._playing.get(f["id"])]
+                if started:
+                    f = started[0]
+                    text = f"lance {f['game']}"
+                    others = len(started) - 1 + len(new)
+                elif new:
                     f = new[0]
                     text = f"joue à {f['game']}" if f["game"] else "vient de se connecter"
-                    if len(new) > 1:
-                        text += f" · +{len(new) - 1} ami{'s' if len(new) > 2 else ''}"
+                    others = len(new) - 1
+                if started or new:
+                    if others:
+                        text += f" · +{others} ami{'s' if others > 1 else ''}"
                     self.event = (f["name"], text, f["avatar"], time.time())
             self._online = now_ids
+            self._playing = {f["id"]: f["game"] for f in online}
             self.friends, self.friends_total = online, len(self._friend_ids)
             self.friends_status = ""
         except urllib.error.HTTPError as e:
