@@ -16,6 +16,8 @@ from . import config
 from .steam import ci, parse_vdf, steam_root
 
 KEY_FILE = "steam_api.json"     # {"key": "..."} — https://steamcommunity.com/dev/apikey
+SEEN_FILE = "steam_seen.json"   # amis en ligne / en jeu au dernier passage (survit aux relances)
+SEEN_KEEP = 10 * 60             # s : au-delà, l'état gardé est trop vieux pour comparer
 API = "https://api.steampowered.com"
 SCAN_EVERY = 3
 FRIENDS_EVERY = 30
@@ -274,9 +276,14 @@ class SteamLive:
             rank = {"en ligne": 1, "occupé": 2, "absent": 3}
             online.sort(key=lambda f: (0 if f["game"] else rank.get(f["state"], 4),
                                        f["name"].lower()))
-            # bandeau pour les amis qui viennent de se connecter ou de lancer un jeu (pas au
-            # premier passage)
+            # bandeau pour les amis qui viennent de se connecter ou de lancer un jeu ; au premier
+            # passage, on compare à l'état gardé avant une relance de l'appli (s'il est récent)
             now_ids = {f["id"] for f in online}
+            if self._online is None:
+                seen = config.load(SEEN_FILE, {}) or {}
+                if time.time() - seen.get("at", 0) < SEEN_KEEP:
+                    self._online = set(seen.get("online") or [])
+                    self._playing = dict(seen.get("playing") or {})
             if self._online is not None:
                 new = [f for f in online if f["id"] not in self._online]
                 started = [f for f in online if f["id"] in self._online and f["game"]
@@ -295,6 +302,11 @@ class SteamLive:
                     self.event = (f["name"], text, f["avatar"], time.time())
             self._online = now_ids
             self._playing = {f["id"]: f["game"] for f in online}
+            try:
+                config.save(SEEN_FILE, {"at": time.time(), "online": sorted(now_ids),
+                                        "playing": self._playing})
+            except OSError:
+                pass
             self.friends, self.friends_total = online, len(self._friend_ids)
             self.friends_status = ""
         except urllib.error.HTTPError as e:
