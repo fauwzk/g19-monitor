@@ -375,7 +375,8 @@ class Ctx:
     pages: list = None           # pages affichées (sans Discord / Docker fermés)
     discord_open: bool = True
     pages_hidden: set = None     # pages masquées faute d'appli lancée
-    pages_event: tuple = None    # (titre, texte, horodatage) : une page masquée revient
+    pages_event: tuple = None    # (titre, texte, horodatage, page) : une page masquée revient
+    toast_closed: float = 0.0    # bandeaux arrivés avant : fermés (Annuler, ou OK pour y aller)
     agent_event: tuple = None    # (titre, texte, horodatage) : appli lancée par un agent Claude
     lgs_event: tuple = None      # (titre, texte, horodatage) : LGS bloque le rétroéclairage
     git: object = None           # git_status.GitStatus
@@ -2506,7 +2507,27 @@ def toast(img, d, n, cache):
     d.text((W - 14, 206), src, font=font(9, True), fill=color, anchor="rm")
     d.text((50, 206), fit(d, n["title"], font(12, True), W - 76 - sw), font=font(12, True),
            fill=TEXT, anchor="lm")
-    d.text((50, 225), fit(d, n["body"], font(11), W - 66), font=font(11), fill=TEXT, anchor="lm")
+    hw = toast_keys(d, n, color) if "open" in n else 0
+    d.text((50, 225), fit(d, n["body"], font(11), W - 66 - hw), font=font(11), fill=TEXT,
+           anchor="lm")
+
+
+def toast_keys(d, n, color):
+    """Touches du bandeau en bas à droite : [OK] ouvrir (si sa page existe) · [✕] fermer.
+    Renvoie la largeur prise, pour raccourcir le texte du message."""
+    f, fb = font(8), font(8, True)
+    items = ([("OK", "ouvrir")] if n.get("open") else []) + [("Annuler", "")]
+    x = W - 14
+    for key, label in reversed(items):
+        if label:
+            x -= d.textlength(label, font=f)
+            d.text((x, 226), label, font=f, fill=dim(TEXT, 0.75), anchor="lm")
+            x -= 3
+        kw = d.textlength(key, font=fb) + 6
+        d.rounded_rectangle((x - kw, 220, x, 232), 3, outline=dim(color, 0.9), width=1)
+        d.text((x - kw / 2, 226), key, font=fb, fill=TEXT, anchor="mm")
+        x -= kw + 6
+    return W - 14 - x + 4
 
 
 TOAST_IN, TOAST_OUT = 0.35, 0.3   # durée de l'entrée / de la sortie en glissant (s)
@@ -2537,12 +2558,16 @@ def ignored(c, item):
 
 
 def current_toast(c, page, t):
-    """La notification la plus récente encore dans sa durée d'affichage, ou None."""
+    """La notification la plus récente encore dans sa durée d'affichage, ou None.
+    "open" : OK peut ouvrir sa page (elle est affichée parmi les pages, et pas déjà à l'écran)."""
     cands = [(n["at"], n) for n in toast_candidates(c, page, t)
-             if t - n["at"] < c.settings["toast_seconds"]]
+             if t - n["at"] < c.settings["toast_seconds"] and n["at"] > c.toast_closed]
     if not cands:
         return None
-    return max(cands, key=lambda x: x[0])[1]
+    n = max(cands, key=lambda x: x[0])[1]
+    pages = c.pages or c.settings.get("pages") or []
+    n["open"] = bool(n.get("page")) and n["page"] in pages and n["page"] != page
+    return n
 
 
 def toast_candidates(c, page, t):
@@ -2551,23 +2576,23 @@ def toast_candidates(c, page, t):
     dc, wn = c.discord, c.notifs
     ve = dc.voice_event if dc and c.settings.get("voice_toasts", True) else None
     if ve:
-        cands.append((ve[3], {"source": "Vocal", "title": ve[0], "body": ve[1], "icon": ve[2],
+        cands.append((ve[3], {"page": "discord", "source": "Vocal", "title": ve[0], "body": ve[1], "icon": ve[2],
                               "color": OK if "rejoint" in ve[1] else MUTED}))
     if dc and dc.notifications and c.settings["discord_toasts"] and page != "discord":
         n = dc.notifications[0]
         # en haut à droite : le groupe ou « #salon · serveur » plutôt que « Discord »
-        cands.append((dc.last_notification, {"source": n.get("where") or "Discord",
+        cands.append((dc.last_notification, {"page": "discord", "source": n.get("where") or "Discord",
                                              "title": n["author"],
                                              "body": n["body"], "icon": n["icon"],
                                              "color": DISCORD}))
     if wn and wn.items and c.settings["win_toasts"] and page != "notifs":
         n = wn.items[0]
         if not ignored(c, n):
-            cands.append((wn.last_time, {"source": n["app"], "title": n["title"],
+            cands.append((wn.last_time, {"page": "notifs", "source": n["app"], "title": n["title"],
                                          "body": n["body"], "icon": n["icon"], "color": ACCENT}))
     sf = c.steam.event if c.steam and c.settings.get("steam_toasts", True) else None
     if sf:
-        cands.append((sf[3], {"source": "Steam", "title": sf[0], "body": sf[1], "icon": sf[2],
+        cands.append((sf[3], {"page": "steam", "source": "Steam", "title": sf[0], "body": sf[1], "icon": sf[2],
                               "color": STEAM_BLUE}))
     st = c.streaming.event if c.streaming and c.settings.get("stream_toasts", True) else None
     if st:
@@ -2575,15 +2600,15 @@ def toast_candidates(c, page, t):
                               "color": HOT if st[1].startswith("connecté") else MUTED}))
     fe = c.fuel.event if c.fuel and c.settings.get("fuel_toasts", True) else None
     if fe:
-        cands.append((fe[2], {"source": "Carburant", "title": fe[0], "body": fe[1],
+        cands.append((fe[2], {"page": "fuel", "source": "Carburant", "title": fe[0], "body": fe[1],
                               "icon": None, "color": HOT if "rupture" in fe[1] else OK}))
     dk = c.docker.event if c.docker and c.settings.get("docker_toasts", True) else None
     if dk:
-        cands.append((dk[2], {"source": "Docker", "title": dk[0], "body": dk[1], "icon": None,
+        cands.append((dk[2], {"page": "docker", "source": "Docker", "title": dk[0], "body": dk[1], "icon": None,
                               "color": HOT}))
     dv = c.driver.event if c.driver and c.settings.get("driver_toasts", True) else None
     if dv:
-        cands.append((dv[2], {"source": "Pilote", "title": dv[0], "body": dv[1], "icon": None,
+        cands.append((dv[2], {"page": "gpu", "source": "Pilote", "title": dv[0], "body": dv[1], "icon": None,
                               "color": WARN}))
     ue = c.updater.event if c.updater else None
     if ue:
@@ -2599,15 +2624,15 @@ def toast_candidates(c, page, t):
                               "color": WARN}))
     pe = c.pages_event
     if pe:
-        cands.append((pe[2], {"source": "Écrans", "title": pe[0], "body": pe[1], "icon": None,
+        cands.append((pe[2], {"page": pe[3] if len(pe) > 3 else None, "source": "Écrans", "title": pe[0], "body": pe[1], "icon": None,
                               "color": ACCENT}))
     sy = c.sysw.event if c.sysw else None
     if sy:
-        cands.append((sy[2], {"source": "Système", "title": sy[0], "body": sy[1], "icon": None,
+        cands.append((sy[2], {"page": "system", "source": "Système", "title": sy[0], "body": sy[1], "icon": None,
                               "color": WARN}))
     ne = c.net.event if c.net else None
     if ne:
-        cands.append((ne[2], {"source": "En jeu", "title": ne[0], "body": ne[1], "icon": None,
+        cands.append((ne[2], {"page": "network", "source": "En jeu", "title": ne[0], "body": ne[1], "icon": None,
                               "color": WARN}))
     se = c.saved_event
     if se:
@@ -2619,11 +2644,11 @@ def toast_candidates(c, page, t):
                               "icon": None, "color": ACCENT}))
     be = c.batteries.event if c.batteries else None
     if be:
-        cands.append((be[2], {"source": "Batterie", "title": be[0], "body": be[1], "icon": None,
+        cands.append((be[2], {"page": "batteries", "source": "Batterie", "title": be[0], "body": be[1], "icon": None,
                               "color": WARN}))
     fe = c.fans.event if c.fans else None
     if fe:
-        cands.append((fe[2], {"source": "Ventilos", "title": fe[0], "body": fe[1], "icon": None,
+        cands.append((fe[2], {"page": "system", "source": "Ventilos", "title": fe[0], "body": fe[1], "icon": None,
                               "color": WARN if "sécurité" in fe[1] else ACCENT}))
     m = c.media
     key = (m.title, m.artist) if m and m.title else None
@@ -2633,13 +2658,13 @@ def toast_candidates(c, page, t):
             c.media_changed = t
         c.media_key = key or ()
     if key and c.settings.get("media_toasts", True) and page != "media" and c.media_changed:
-        cands.append((c.media_changed, {"source": m.app or "Média", "title": m.title,
+        cands.append((c.media_changed, {"page": "media", "source": m.app or "Média", "title": m.title,
                                         "body": m.artist, "icon": m.art,
                                         "color": media_accent(m)}))
     al = c.alerts
     if al and al.newest in al.active:
         title, body = al.describe(al.newest)
-        cands.append((al.last_new, {"source": "Alerte", "title": title, "body": body,
+        cands.append((al.last_new, {"page": "system", "source": "Alerte", "title": title, "body": body,
                                     "icon": None, "color": HOT}))
     return [{**n, "at": at} for at, n in cands if at]
 

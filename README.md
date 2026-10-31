@@ -52,7 +52,8 @@ thèmes, un menu au clavier et un utilitaire de réglages. Windows, Python.
 
 Et aussi : cœurs du CPU, notifications Windows, test de débit, VPN (Tailscale…), recopie en
 direct d'un écran du PC, panneau des ventilateurs, bandeaux qui glissent depuis le bas
-(messages, amis, périphériques, alertes…).
+(messages, amis, périphériques, alertes…) : OK ouvre la page correspondante, Annuler ferme le
+bandeau.
 
 ## Thèmes
 

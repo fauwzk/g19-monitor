@@ -73,7 +73,7 @@ try:
     from g19.notifications import WindowsNotifications, flash_kind
     from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, RECAP_SECONDS, Ctx, has_lyrics, ignored,
                             render, render_away, render_fans, render_idle, render_menu, render_recap,
-                            render_splash, theme_of, toast_candidates)
+                            render_splash, theme_of, toast_candidates, current_toast)
     from g19.sysalerts import SystemWatch
     from g19.speedtest import SpeedTest
     from g19.sysinfo import SystemStats
@@ -584,8 +584,7 @@ def run():
                         and p in c.pages_hidden]
                 if back:   # appli lancée : sa page masquée revient
                     names = " et ".join(settings.PAGE_TITLES.get(p, p) for p in back)
-                    c.pages_event = (f"Page {names}", "de nouveau disponible · ◄ ► pour y aller",
-                                     now)
+                    c.pages_event = (f"Page {names}", "de nouveau disponible", now, back[0])
             # pages masquées parce que l'appli est vue fermée (pas juste pas encore lue)
             unknown = {"docker"} if c.docker and c.docker.status == "lecture…" else set()
             c.pages_hidden = {p for p in cfg["pages"] if p not in pages and p not in unknown}
@@ -636,6 +635,15 @@ def run():
                     continue
                 if c.away.active and cfg.get("idle_screen", True) and not cover.open                         and not menu.open:
                     continue                # la touche réveille seulement l'écran
+                # bandeau affiché : OK ouvre sa page, Annuler le ferme (pas sous un menu)
+                if b in ("ok", "cancel") and not cover.open and not menu.open \
+                        and fan_panel is None:
+                    n = current_toast(c, page, now)
+                    if n and (b == "cancel" or n.get("open")):
+                        c.toast_closed = now
+                        if b == "ok":
+                            page = n["page"]
+                        continue
                 # le carrousel passe avant tout le reste : il recouvre l'écran
                 if cover.open:
                     res = cover.handle(b)
