@@ -81,6 +81,7 @@ DEFAULTS = {
     "screen_list_style": "coverflow",  # touche Menu : coverflow, flat, grid, list
     "screen_dither": True,           # tramage : dégradés sans bandes sur l'écran 16 bits
     "volume_popup": True,            # fenêtre de volume sur le G19 quand le son change
+    "mic_popup": True,               # fenêtre sur le G19 quand le micro est coupé / rétabli
     "headset_mic": True,             # micro du casque HyperX (coupé / ouvert) dans la barre du haut
     "animations": True,              # animation entre pages, fondus à l'ouverture des écrans
     "animation_style": "slide",      # g19/anim.py : slide, fade, zoom, wipe, cube, blinds, none

@@ -62,6 +62,7 @@ class HyperXBattery:
         self.charging = None
         self.connected = False    # casque allumé et relié au dongle
         self.mic_muted = None     # micro coupé par le bouton du casque (None : inconnu)
+        self.mic_changed_at = 0.0  # dernier appui sur le bouton du micro (fenêtre du G19)
         self.on_change = on_change
         self._handles = []
         self._writer = None
@@ -138,6 +139,8 @@ class HyperXBattery:
         elif kind == "link":
             self.connected = True
         elif kind == "mute":
+            if self.mic_muted is not None and self.mic_muted != bool(value):
+                self.mic_changed_at = time.time()
             self.mic_muted, self.connected = bool(value), True
         elif kind == "battery":
             self.level, self.connected = value, True

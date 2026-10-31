@@ -74,7 +74,7 @@ try:
     from g19.media import MediaMonitor
     from g19.notifications import WindowsNotifications, flash_kind
     from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, RECAP_SECONDS, Ctx, has_lyrics, ignored,
-                            volume_popup, VOLUME_POPUP,
+                            volume_popup, popup_event, VOLUME_POPUP,
                             render, render_away, render_fans, render_idle, render_menu, render_recap,
                             render_splash, theme_of, toast_candidates, current_toast)
     from g19.sysalerts import SystemWatch
@@ -990,7 +990,7 @@ def run():
                 frame_img = screen.pattern(now, pattern_at)   # mire de réglage
             else:
                 pattern_at = None
-            if cfg.get("volume_popup", True) and not pattern_at and not (
+            if not pattern_at and not (
                     page == "audio" and not cover.open and not menu.open) and not (
                     c.away.active and cfg.get("idle_screen", True)):
                 frame_img = (guarded("fenêtre de volume", volume_popup, frame_img, c, now)
@@ -1011,7 +1011,8 @@ def run():
             # pendant la fenêtre de volume, au moins 30 images/s pour que la barre glisse ; un
             # changement de volume réveille la boucle tout de suite
             step = 1 / cfg["fps"]
-            if now - c.volume.changed_at < VOLUME_POPUP:
+            pop = popup_event(c, cfg)
+            if pop and now - pop[1] < VOLUME_POPUP:
                 step = min(step, 1 / 30)
             c.volume.wake.clear()
             c.volume.wake.wait(max(0.0, step - (time.time() - now)))

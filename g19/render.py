@@ -2364,6 +2364,7 @@ ICON_SCREEN, ICON_BOX, ICON_PEOPLE, ICON_BATTERY = "\uE7F4", "\uE7B8", "\uE716",
 ICON_CAR, ICON_GAME, ICON_MOON = "\uE804", "\uE7FC", "\uE708"
 ICON_VOLUME = ("\uE992", "\uE993", "\uE994", "\uE995")     # 0 à 3 ondes
 ICON_MUTE = "\uE74F"
+ICON_MIC = "\uE720"
 
 
 def empty_state(d, glyph, title, subtitle="", color=None, cy=118):
@@ -3188,20 +3189,38 @@ VOLUME_FADE_IN, VOLUME_FADE_OUT = 0.12, 0.35
 _popup_since = _popup_change = 0.0    # début de l'affichage en cours, dernier changement vu
 
 
-def volume_popup(img, c, t):
-    """Fenêtre de volume par-dessus l'écran quand le son monte, descend ou est coupé : niveau en
-    grand, barre qui glisse vers la nouvelle valeur. Apparaît et s'efface en fondu."""
-    global _popup_since, _popup_change
+def popup_event(c, settings=None):
+    """Dernier changement à montrer : ("volume" | "mic" | "headset", horodatage) ou None."""
+    s = settings if settings is not None else (c.settings if c else {})
     vol = c.volume if c else None
-    if not vol or not vol.changed_at or vol.level is None:
+    hx = getattr(c.batteries, "hyperx", None) if c and c.batteries else None
+    events = []
+    if vol and s.get("volume_popup", True) and vol.level is not None:
+        events.append(("volume", vol.changed_at))
+    if s.get("mic_popup", True):
+        if vol:
+            events.append(("mic", getattr(vol, "mic_changed_at", 0.0)))
+        if hx:
+            events.append(("headset", getattr(hx, "mic_changed_at", 0.0)))
+    events = [e for e in events if e[1]]
+    return max(events, key=lambda e: e[1]) if events else None
+
+
+def volume_popup(img, c, t):
+    """Fenêtre par-dessus l'écran quand le son monte, descend ou est coupé (niveau en grand,
+    barre qui glisse) ou quand le micro est coupé / rétabli. Apparaît et s'efface en fondu ;
+    déjà affichée, elle se met à jour sans refaire son apparition."""
+    global _popup_since, _popup_change
+    ev = popup_event(c)
+    if not ev:
         return img
-    if vol.changed_at != _popup_change:
-        # déjà affichée : elle reste en place et se met à jour, sans refaire son apparition
-        if not (_popup_change and vol.changed_at - _popup_change < VOLUME_POPUP):
-            _popup_since = vol.changed_at
-        _popup_change = vol.changed_at
+    kind, at = ev
+    if at != _popup_change:
+        if not (_popup_change and at - _popup_change < VOLUME_POPUP):
+            _popup_since = at
+        _popup_change = at
     # changement annoncé par Windows juste après l'heure de cette image : âge nul, pas négatif
-    age = max(0.0, t - vol.changed_at)
+    age = max(0.0, t - at)
     if age >= VOLUME_POPUP:
         return img
     if ANIMATE:
@@ -3210,12 +3229,16 @@ def volume_popup(img, c, t):
         rise = int(6 * (1 - min(1.0, shown_for / VOLUME_FADE_IN)))
     else:
         alpha, rise = 1.0, 0
-    level = vol.level * 100
-    shown = glide("volume_popup", level, t, 0.06)
-    muted = vol.muted
     out = img.copy()
     d = ImageDraw.Draw(out)
     x0, x1, y0 = 56, W - 56, 170 + rise
+    if kind != "volume":
+        mic_popup(d, c, kind, x0, x1, y0)
+        return out if alpha >= 0.99 else Image.blend(img, out, alpha)
+    vol = c.volume
+    level = vol.level * 100
+    shown = glide("volume_popup", level, t, 0.06)
+    muted = vol.muted
     panel(d, (x0, y0, x1, y0 + 50), 10, outline=dim(ACCENT, 0.6))
     glyph = ICON_MUTE if muted or level < 0.5 else ICON_VOLUME[min(3, 1 + int(level // 34))]
     icon(d, glyph, x0 + 22, y0 + 25, 20, HOT if muted else ACCENT)
@@ -3227,6 +3250,25 @@ def volume_popup(img, c, t):
     bar(d, x0 + 42, y0 + 30, x1 - x0 - 54, 8, shown / 100, dim(MUTED, 0.8) if muted else ACCENT,
         smooth=True)
     return out if alpha >= 0.99 else Image.blend(img, out, alpha)
+
+
+def mic_popup(d, c, kind, x0, x1, y0):
+    """Contenu de la fenêtre pour le micro : coupé en rouge (barré), rétabli en vert."""
+    if kind == "headset":
+        muted, name = bool(c.batteries.hyperx.mic_muted), "Casque HyperX"
+    else:
+        muted, name = bool(c.volume.mic_muted), c.volume.mic_device or "Micro"
+    color = HOT if muted else OK
+    panel(d, (x0, y0, x1, y0 + 50), 10, outline=dim(color, 0.6))
+    cx, cy = x0 + 24, y0 + 25
+    icon(d, ICON_MIC, cx, cy, 20, color)
+    if muted:      # barre oblique, détourée pour rester lisible sur l'icône
+        d.line((cx - 10, cy - 10, cx + 10, cy + 10), fill=PANEL, width=5)
+        d.line((cx - 10, cy - 10, cx + 10, cy + 10), fill=color, width=2)
+    d.text((x0 + 46, y0 + 19), "Micro coupé" if muted else "Micro activé", font=font(15, True),
+           fill=color, anchor="lm")
+    d.text((x0 + 46, y0 + 36), fit(d, name, font(9), x1 - x0 - 58), font=font(9), fill=MUTED,
+           anchor="lm")
 
 
 # --- Test de débit -----------------------------------------------------------------------------

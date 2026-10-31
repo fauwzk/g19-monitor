@@ -196,15 +196,15 @@ def list_devices():
 
 
 class _VolumeEvents(AudioEndpointVolumeCallback):
-    """Prévenu par Windows dès que le volume ou la coupure de la sortie change (molette, touches
-    multimédia, autre appli), sans attendre le prochain tour du fil audio."""
+    """Prévenu par Windows dès que le volume ou la coupure d'un périphérique change (molette,
+    touches multimédia, autre appli), sans attendre le prochain tour du fil audio."""
 
-    def __init__(self, monitor):
+    def __init__(self, handler):
         super().__init__()
-        self.monitor = monitor
+        self.handler = handler
 
     def on_notify(self, new_volume, new_mute, event_context, channels, channel_volumes):
-        self.monitor._level_changed(_unit(new_volume), bool(new_mute))
+        self.handler(_unit(new_volume), bool(new_mute))
 
 
 class VolumeMonitor:
@@ -220,6 +220,10 @@ class VolumeMonitor:
         self.mic_level = None
         self.mic_muted = False
         self.mic_peak = 0.0
+        self.mic_device = ""
+        self.mic_changed_at = 0.0    # dernier micro coupé / rétabli (fenêtre du G19)
+        self._mic_seen = None        # (micro, coupé) au passage précédent
+        self._mic_events = None
         self.changed_at = 0.0    # dernier changement du volume de sortie (fenêtre du G19)
         self._ev = None          # IAudioEndpointVolume de la sortie, relu à chaque tour
         self._seen = None        # (périphérique, niveau, coupé) au tour précédent
@@ -298,7 +302,7 @@ class VolumeMonitor:
         ev = spk.EndpointVolume
         self._ev = ev
         if self.device != (spk.FriendlyName or "") or self._events is None:
-            self._subscribe(ev)
+            self._subscribe(ev, "_events", self._level_changed)
         self.device = spk.FriendlyName or ""
         self.level = _unit(ev.GetMasterVolumeLevelScalar())
         self.muted = bool(ev.GetMute())
@@ -307,8 +311,10 @@ class VolumeMonitor:
         if mic:
             dev = AudioUtilities.CreateDevice(mic)
             mev = dev.EndpointVolume
-            self.mic_level = _unit(mev.GetMasterVolumeLevelScalar())
-            self.mic_muted = bool(mev.GetMute())
+            if self.mic_device != (dev.FriendlyName or "") or self._mic_events is None:
+                self._subscribe(mev, "_mic_events", self._mic_changed)
+            self.mic_device = dev.FriendlyName or ""
+            self._mic_changed(_unit(mev.GetMasterVolumeLevelScalar()), bool(mev.GetMute()))
             meters.append(("mic", self._meter(mic)))
         else:
             self.mic_level = None
@@ -353,19 +359,29 @@ class VolumeMonitor:
             self.wake.set()
         self._seen = seen
 
-    def _subscribe(self, ev):
-        """Abonnement aux changements de volume de la sortie par défaut (refait quand elle
-        change) ; sans lui, la relecture à chaque tour prend le relais."""
-        old, self._events = self._events, None
+    def _mic_changed(self, level, muted):
+        """Nouvel état du micro par défaut ; seule la coupure ouvre la fenêtre du G19."""
+        self.mic_level, self.mic_muted = level, muted
+        seen = (self.mic_device, muted)
+        if self._mic_seen and self._mic_seen[0] == seen[0] and self._mic_seen != seen:
+            self.mic_changed_at = time.time()
+            self.wake.set()
+        self._mic_seen = seen
+
+    def _subscribe(self, ev, attr, handler):
+        """Abonnement aux changements de volume d'un périphérique par défaut (refait quand il
+        change) ; sans lui, la relecture régulière prend le relais."""
+        old = getattr(self, attr)
+        setattr(self, attr, None)
         if old:
             try:
                 old[0].UnregisterControlChangeNotify(old[1])
             except Exception:
                 pass
         try:
-            cb = _VolumeEvents(self)
+            cb = _VolumeEvents(handler)
             ev.RegisterControlChangeNotify(cb)
-            self._events = (ev, cb)
+            setattr(self, attr, (ev, cb))
         except Exception:
             pass
 
