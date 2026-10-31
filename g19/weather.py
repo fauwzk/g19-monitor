@@ -14,7 +14,11 @@ FORECAST = ("https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lo
             "&hourly=temperature_2m,precipitation_probability,weather_code,is_day"
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,"
             "precipitation_probability_max,sunrise,sunset"
+            "&minutely_15=precipitation&forecast_minutely_15=8&past_minutely_15=1"
             "&timezone=auto&forecast_days=5&timeformat=unixtime")
+RAIN_MM = 0.2             # mm en 15 min : il pleut vraiment
+RAIN_AHEAD = 45 * 60      # prévenir jusqu'à 45 min avant
+RAIN_QUIET = 3600         # pas de nouveau bandeau tant qu'il a plu (ou prévu) dans l'heure
 IP_SERVICES = [
     ("https://ipwho.is/?fields=success,city,region,country,latitude,longitude",
      ("city", "region", "country", "latitude", "longitude")),
@@ -22,7 +26,10 @@ IP_SERVICES = [
      ("cityName", "regionName", "countryName", "latitude", "longitude")),
 ]
 IP_CACHE = 6 * 3600       # la position par IP est redemandée toutes les 6 h
-REFRESH = 15 * 60
+LOC_CACHE = 30 * 60       # position Windows relue toutes les 30 min (PC portable qui bouge)
+REVERSE = ("https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10"
+           "&accept-language=fr&lat={lat}&lon={lon}")
+REFRESH = 10 * 60
 UA = {"User-Agent": "G19Monitor"}
 
 # code météo WMO → (libellé, famille d'icône)
@@ -38,6 +45,26 @@ CODES = {
     82: ("Fortes averses", "rain"), 85: ("Averses de neige", "snow"), 86: ("Averses de neige", "snow"),
     95: ("Orage", "storm"), 96: ("Orage et grêle", "storm"), 99: ("Orage et grêle", "storm"),
 }
+
+
+def rain_soon(data, now):
+    """(minutes avant la pluie, mm sur le premier quart d'heure pluvieux) s'il ne pleut pas
+    maintenant mais qu'il va pleuvoir dans les RAIN_AHEAD s ; None sinon."""
+    m = (data or {}).get("minutely_15") or {}
+    steps = [(t, p or 0.0) for t, p in zip(m.get("time") or [], m.get("precipitation") or [])]
+    now_mm = max((p for t, p in steps if t <= now < t + 900), default=0.0)
+    if now_mm >= RAIN_MM:
+        return None
+    for t, p in steps:
+        if now < t <= now + RAIN_AHEAD and p >= RAIN_MM:
+            return max(5, int(round((t - now) / 300.0)) * 5), p
+    return None
+
+
+def raining_or_soon(data, now):
+    m = (data or {}).get("minutely_15") or {}
+    return any(t <= now + RAIN_AHEAD and t + 900 > now and (p or 0) >= RAIN_MM
+               for t, p in zip(m.get("time") or [], m.get("precipitation") or []))
 
 
 def describe(code):
@@ -74,10 +101,56 @@ def ip_location():
     return None
 
 
+def windows_location(timeout=20):
+    """Position donnée par Windows (Wi-Fi, GPS : ~100 m) arrondie à ~1 km, ou None si la
+    localisation est coupée (Paramètres → Confidentialité → Localisation) ou indisponible."""
+    try:
+        import asyncio
+        from winrt.windows.devices.geolocation import GeolocationAccessStatus, Geolocator
+    except ImportError:
+        return None
+
+    async def read():
+        if await Geolocator.request_access_async() != GeolocationAccessStatus.ALLOWED:
+            return None
+        g = Geolocator()
+        g.desired_accuracy_in_meters = 500
+        pos = await asyncio.wait_for(g.get_geoposition_async(), timeout)
+        p = pos.coordinate.point.position
+        return round(p.latitude, 2), round(p.longitude, 2)
+
+    try:
+        found = asyncio.run(read())
+    except Exception:
+        return None
+    if not found:
+        return None
+    lat, lon = found
+    place = {"name": "?", "admin": "", "country": "", "lat": lat, "lon": lon, "loc": True}
+    try:   # nom de la commune (à ~1 km près, la position exacte n'est pas envoyée)
+        a = _get(REVERSE.format(lat=lat, lon=lon)).get("address") or {}
+        place.update(name=a.get("city") or a.get("town") or a.get("village")
+                     or a.get("municipality") or "?", admin=a.get("state", ""),
+                     country=a.get("country", ""))
+    except Exception:
+        pass
+    return place
+
+
 def resolve(city):
-    """Lieu de la ville réglée, ou d'après l'IP si aucune ville (avec cache)."""
+    """Lieu de la ville réglée ; sans ville : la position de Windows, sinon d'après l'IP
+    (bien moins précis : ville du fournisseur d'accès). Avec cache."""
     cache = config.load("weather_place.json", {}) or {}
     if not city:
+        hit = cache.get("__loc__")
+        if hit and time.time() - hit.get("at", 0) < LOC_CACHE:
+            return hit
+        place = windows_location()
+        if place:
+            place["at"] = time.time()
+            cache["__loc__"] = place
+            config.save("weather_place.json", cache)
+            return place
         hit = cache.get("__ip__")
         if hit and time.time() - hit.get("at", 0) < IP_CACHE:
             return hit
@@ -101,6 +174,8 @@ class WeatherMonitor:
         self.data = None
         self.status = "init"
         self.updated = 0.0
+        self.event = None           # (titre, texte, horodatage) : pluie dans peu de temps
+        self._rain_seen = 0.0       # dernière fois qu'il pleuvait ou qu'une pluie était prévue
         self._wake = threading.Event()
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -115,6 +190,7 @@ class WeatherMonitor:
                 self.data = _get(FORECAST.format(**self.place))
                 self.updated = time.time()
                 self.status = "ok"
+                self._check_rain(self.updated)
             except Exception as e:
                 self.status = str(e) if isinstance(e, RuntimeError) else "hors ligne"
             # réveil anticipé si la ville change
@@ -125,6 +201,17 @@ class WeatherMonitor:
                     break
                 if (self.get_city() or "").strip() != city:
                     break
+
+    def _check_rain(self, now):
+        soon = rain_soon(self.data, now)
+        if soon and now - self._rain_seen > RAIN_QUIET:
+            minutes, mm = soon
+            where = (self.place or {}).get("name") or ""
+            self.event = (f"Pluie dans ~{minutes} min",
+                          f"{mm:.1f} mm en 15 min".replace(".", ",") + (f" · {where}" if where
+                                                                         else ""), now)
+        if soon or raining_or_soon(self.data, now):
+            self._rain_seen = now
 
     # --- accès pratiques pour l'affichage ---
 

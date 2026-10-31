@@ -132,10 +132,11 @@ dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilit
 | OK, ▲ ▼ | action de la page (paroles, vue des graphes, session Claude, muet Discord…) |
 | Annuler | première page, ou fermer |
 
-- **Utilitaire** (`config_g19.pyw`) : pages et leur ordre, thème, écran du G19 (luminosité,
-  contraste, gamma…), bandeaux, mode nuit, alertes et rétroéclairage, raccourcis, Discord,
-  Steam, ventilateurs, sauvegarde des réglages. L'aperçu « ● G19 en direct » montre l'écran du
-  clavier, et le pavé dessous le pilote comme le vrai clavier.
+- **Utilitaire** (`config_g19.pyw`, Qt) : huit rubriques — Pages, Apparence (thème, image de
+  l'écran, mode nuit), Bandeaux, Clavier et alertes, Audio, Raccourcis, Services (météo, réseau,
+  Home Assistant, Discord, Steam) et Système. Les réglages s'appliquent tout de suite, sans
+  bouton « Enregistrer ». L'aperçu « ● G19 en direct » montre l'écran du clavier, et le pavé
+  dessous le pilote comme le vrai clavier.
 - **Zone de notification** : icône avec l'état de Claude et les messages non lus ; menu pour
   choisir la page, ouvrir le journal, redémarrer ou quitter.
 
@@ -224,7 +225,7 @@ touchent.
 | `g19_monitor.py` | boucle principale : capteurs, touches, rendu, LCD |
 | `g19/render.py` | toutes les pages et thèmes (PIL) ; `g19/looks.py` pour les thèmes qui changent les formes |
 | `g19/*.py` | une source par fichier (GPU, Discord, Steam, média, audio, Docker…) |
-| `config_g19.pyw` | utilitaire de réglages (tkinter) |
+| `config_g19.pyw` | utilitaire de réglages (PySide6 / Qt) |
 | `g19/updater.py` | mises à jour depuis ce dépôt |
 | `build_package.py`, `installer/` | paquet d'installation pour un autre PC |
 | `tools/readme_shots.py` | captures de ce README, avec des données de démonstration |

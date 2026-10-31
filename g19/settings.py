@@ -55,6 +55,7 @@ PAGE_TITLES = {
     "network": "Réseau",
     "docker": "Docker",
     "fuel": "Carburant",
+    "toasts": "Bandeaux",
     "screen": "Écran PC",
 }
 
@@ -76,6 +77,11 @@ DEFAULTS = {
     "voice_toasts": True,            # bandeau quand quelqu'un rejoint / quitte l'appel Discord
     "steam_toasts": True,            # bandeau quand un ami Steam se connecte
     "stream_toasts": True,           # bandeau quand quelqu'un se connecte en streaming
+    "animations": True,              # animation entre pages, fondus à l'ouverture des écrans
+    "animation_style": "slide",      # g19/anim.py : slide, fade, zoom, wipe, cube, blinds, none
+    "animation_speed": "normal",     # fast, normal, slow
+    "claude_reminders": True,        # rappel (bandeau + clavier) : Claude attend depuis 10 min
+    "rain_toasts": True,             # bandeau « pluie dans ~30 min »
     "fuel_toasts": True,             # bandeau quand un carburant est en rupture ou revient
     "fuel_main": "",                 # carburant mis en avant (vide : le plus courant)
     "docker_toasts": True,           # bandeau quand un conteneur plante ou boucle
@@ -158,7 +164,8 @@ PULSE_SPEEDS = {"très lent": 1000, "lent": 600, "normal": 300, "rapide": 180,
 
 
 BLINK_RANGE = (60, 1000)  # ms par clignotement
-COLOR_KEYS = {"alert": "color_alert", "waiting": "color_waiting", "working": "color_working",
+COLOR_KEYS = {"alert": "color_alert", "waiting": "color_waiting", "remind": "color_waiting",
+              "working": "color_working",
               "done": "color_done", "discord": "color_discord", "notif": "color_notif",
               "whatsapp": "color_whatsapp", "snap": "color_snap"}
 

@@ -1,5 +1,6 @@
 """Batterie des appareils Bluetooth (casque, manette…) telle que Windows la connaît, lue en
-tâche de fond via PowerShell (propriétés PnP), et alerte quand elle passe sous LOW %."""
+tâche de fond via PowerShell (propriétés PnP), plus celle des casques HyperX branchés par leur
+dongle USB (g19/headset.py), et alerte quand elle passe sous LOW %."""
 import json
 import re
 import subprocess
@@ -38,7 +39,11 @@ class Batteries:
         self.event = None        # (titre, texte, horodatage) pour le bandeau
         self.status = "lecture…"
         self._alerted = {}
+        self._bt = []            # appareils Bluetooth de la dernière lecture
+        self._hyperx_on = None   # casque HyperX connecté au dernier passage (None : inconnu)
         self._wake = threading.Event()
+        from .headset import HyperXBattery
+        self.hyperx = HyperXBattery(on_change=self._update)
         threading.Thread(target=self._run, daemon=True).start()
 
     def refresh(self):
@@ -83,10 +88,24 @@ class Batteries:
                 continue          # appareil sans batterie connue
             name = g["name"] or g["alt"] or "?"
             merged[name] = {"name": name, "level": g["level"], "connected": g["connected"]}
-        devices = sorted(merged.values(), key=lambda d: (not d["connected"], d["name"].lower()))
+        self._bt = list(merged.values())
+        self._update()
+
+    def _update(self):
+        """Liste affichée (Bluetooth + casque HyperX) et alerte de batterie faible ; appelée
+        aussi dès que le casque envoie un nouveau niveau."""
+        extra = [d for d in (self.hyperx.device(),) if d]
+        hx = extra[0] if extra else None
+        on = hx["connected"] if hx else None
+        if hx and self._hyperx_on is not None and on != self._hyperx_on:
+            self.event = (hx["name"], f"connecté · batterie {hx['level']} %" if on
+                          else "déconnecté", time.time())
+        if hx:
+            self._hyperx_on = on
+        devices = sorted(self._bt + extra, key=lambda d: (not d["connected"], d["name"].lower()))
         now = time.time()
         for d in devices:
-            if d["connected"] and d["level"] <= LOW:
+            if d["connected"] and d["level"] <= LOW and not d.get("charging"):
                 if now - self._alerted.get(d["name"], 0) >= REALERT:
                     self._alerted[d["name"]] = now
                     self.event = (d["name"], f"batterie faible : {d['level']} %", now)

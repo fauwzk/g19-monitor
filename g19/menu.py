@@ -5,7 +5,11 @@ l'essentiel sans le PC.
 Les changements sont enregistrés aussitôt (même fichier que config_g19.pyw).
 """
 from . import settings, version
+from .anim import SPEED_LABELS, STYLES
 from .night import HOURS
+
+ANIM_STYLES = [(k, v[0]) for k, v in STYLES.items()]
+ANIM_SPEEDS = list(SPEED_LABELS.items())
 
 GAME_PAGES = [("", "aucune"), ("gpu", "GPU"), ("games", "Jeux")]
 BASE_COLORS = [("#ffffff", "blanc"), ("#00c8ff", "cyan"), ("#4060ff", "bleu"),
@@ -61,6 +65,8 @@ SETTINGS_ITEMS = [
     ("stream_toasts", "Bandeau connexion streaming", "bool", None),
     ("docker_toasts", "Bandeau conteneur Docker en panne", "bool", None),
     ("fuel_toasts", "Bandeau carburant en rupture / de retour", "bool", None),
+    ("rain_toasts", "Bandeau pluie dans peu de temps", "bool", None),
+    ("claude_reminders", "Rappel : Claude attend depuis 10 min", "bool", None),
     ("page_toasts", "Bandeau page de nouveau dispo", "bool", None),
     ("driver_toasts", "Bandeau nouveau pilote AMD", "bool", None),
     ("sys_alerts", "Alertes système (MAJ, disque)", "bool", None),
@@ -75,6 +81,9 @@ SETTINGS_ITEMS = [
     ("game_page", "Page au lancement d'un jeu", "choice", GAME_PAGES),
     ("remember_page", "Rouvrir sur la dernière page", "bool", None),
     ("fps", "Fluidité (images/s)", "int", (5, 60, 5)),
+    ("animations", "Animations (pages, menus)", "bool", None),
+    ("animation_style", "    style entre les pages", "choice", ANIM_STYLES),
+    ("animation_speed", "    vitesse", "choice", ANIM_SPEEDS),
     ("ping_target", "Cible du ping (Réseau)", "choice",
      [("1.1.1.1", "Cloudflare 1.1.1.1"), ("8.8.8.8", "Google 8.8.8.8"),
       ("9.9.9.9", "Quad9 9.9.9.9")]),

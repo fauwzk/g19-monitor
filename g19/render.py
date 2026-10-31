@@ -377,6 +377,9 @@ class Ctx:
     pages_hidden: set = None     # pages masquées faute d'appli lancée
     pages_event: tuple = None    # (titre, texte, horodatage, page) : une page masquée revient
     toast_closed: float = 0.0    # bandeaux arrivés avant : fermés (Annuler, ou OK pour y aller)
+    toast_log: object = None     # deque des derniers bandeaux (page Bandeaux)
+    toast_sel: int = 0
+    claude_event: tuple = None   # (titre, texte, horodatage, session) : rappel d'une session
     agent_event: tuple = None    # (titre, texte, horodatage) : appli lancée par un agent Claude
     lgs_event: tuple = None      # (titre, texte, horodatage) : LGS bloque le rétroéclairage
     git: object = None           # git_status.GitStatus
@@ -1748,6 +1751,47 @@ def page_fuel(d, c, t):
     d.text((10, 236), fit(d, foot, font(9), room), font=font(9), fill=color, anchor="lb")
 
 
+TOAST_ROWS = 6
+
+
+def page_toasts(img, d, c, t):
+    """Les 20 derniers bandeaux, le plus récent en haut ; ▲ ▼ choisir, OK ouvrir."""
+    log = list(c.toast_log or ())
+    d.text((10, 36), "Derniers bandeaux", font=font(12, True), fill=TEXT, anchor="lm")
+    if not log:
+        d.text((W // 2, 130), "Aucun bandeau pour l'instant", font=font(11), fill=MUTED,
+               anchor="mm")
+        return
+    c.toast_sel = max(0, min(c.toast_sel, len(log) - 1))
+    top = max(0, min(c.toast_sel - TOAST_ROWS + 2, len(log) - TOAST_ROWS))
+    top = min(top, c.toast_sel)
+    d.text((W - 10, 36), f"{c.toast_sel + 1}/{len(log)}", font=font(9), fill=MUTED, anchor="rm")
+    cache = c.discord.avatars if c.discord else None
+    for i, n in enumerate(log[top:top + TOAST_ROWS]):
+        y = 48 + i * 31
+        color = n.get("color") or ACCENT
+        if isinstance(color, list):
+            color = tuple(color)
+        sel = top + i == c.toast_sel
+        panel(d, (6, y, W - 6, y + 28), 5, outline=ACCENT if sel and _theme != "g19" else None,
+              color=dim(ACCENT, 0.35) if sel and _theme == "g19" else None)
+        d.rounded_rectangle((6, y, 9, y + 28), 2, fill=color)
+        avatar(img, d, cache, n.get("icon"), 26, y + 14, 20, n.get("title") or n.get("source"),
+               color=color)
+        when = time.strftime("%H:%M", time.localtime(n["at"]))
+        d.text((W - 12, y + 8), when, font=font(9), fill=MUTED, anchor="rm")
+        sw = d.textlength(when, font=font(9)) + 8
+        src = fit(d, n.get("source") or "", font(8, True), 90)
+        d.text((W - 12 - sw, y + 8), src, font=font(8, True), fill=color, anchor="rm")
+        sw += d.textlength(src, font=font(8, True)) + 6
+        d.text((42, y + 8), fit(d, n.get("title") or "", font(11, True), W - 54 - sw),
+               font=font(11, True), fill=TEXT, anchor="lm")
+        d.text((42, y + 21), fit(d, n.get("body") or "", font(10), W - 54), font=font(10),
+               fill=dim(TEXT, 0.75), anchor="lm")
+    d.text((10, 237), "▲▼ choisir · OK ouvrir", font=font(9), fill=dim(MUTED, 0.85),
+           anchor="lb")
+
+
 def page_screen(img, d, c, t):
     """Recopie en direct d'un écran du PC ; OK change d'écran, ▲ ▼ zoom autour du curseur."""
     m = c.mirror
@@ -1771,12 +1815,12 @@ def page_screen(img, d, c, t):
 
 
 def page_batteries(d, c, t):
-    """Batterie des appareils Bluetooth connus de Windows."""
+    """Batterie des appareils Bluetooth connus de Windows et du casque HyperX (dongle)."""
     from .battery import LOW
     b = c.batteries
     devices = b.devices if b else []
     if not devices:
-        msg = (b.status if b and b.status else "Aucun appareil Bluetooth avec batterie")
+        msg = (b.status if b and b.status else "Aucun appareil avec batterie")
         d.text((W // 2, 112), "Batteries", font=font(16, True), fill=ACCENT, anchor="mm")
         d.text((W // 2, 136), fit(d, msg, font(11), 290), font=font(11), fill=MUTED, anchor="mm")
         return
@@ -1790,8 +1834,10 @@ def page_batteries(d, c, t):
         battery_icon(d, 14, y + 18, 34, 18, lvl, color, dev["connected"])
         d.text((60, y + 11), fit(d, dev["name"], font(13, True), 170), font=font(13, True),
                fill=TEXT if dev["connected"] else MUTED, anchor="lm")
-        d.text((60, y + 26), "connecté" if dev["connected"] else "déconnecté · dernier niveau connu",
-               font=font(9), fill=OK if dev["connected"] else MUTED, anchor="lm")
+        state = ("en charge" if dev.get("charging") else "connecté") if dev["connected"] \
+            else "éteint · dernier niveau connu"
+        d.text((60, y + 26), state, font=font(9), fill=OK if dev["connected"] else MUTED,
+               anchor="lm")
         d.text((W - 14, y + 18), f"{lvl} %", font=font(18, True),
                fill=color if dev["connected"] else MUTED, anchor="rm")
     d.text((10, 232), f"alerte sous {LOW} % · relu chaque minute", font=font(9),
@@ -2566,7 +2612,8 @@ def current_toast(c, page, t):
         return None
     n = max(cands, key=lambda x: x[0])[1]
     pages = c.pages or c.settings.get("pages") or []
-    n["open"] = bool(n.get("page")) and n["page"] in pages and n["page"] != page
+    n["open"] = bool(n.get("url") or n.get("session")) or \
+        (bool(n.get("page")) and n["page"] in pages and n["page"] != page)
     return n
 
 
@@ -2581,7 +2628,9 @@ def toast_candidates(c, page, t):
     if dc and dc.notifications and c.settings["discord_toasts"] and page != "discord":
         n = dc.notifications[0]
         # en haut à droite : le groupe ou « #salon · serveur » plutôt que « Discord »
-        cands.append((dc.last_notification, {"page": "discord", "source": n.get("where") or "Discord",
+        cands.append((dc.last_notification, {"page": "discord",
+                                             "url": dc.channel_url(n.get("channel_id")),
+                                             "source": n.get("where") or "Discord",
                                              "title": n["author"],
                                              "body": n["body"], "icon": n["icon"],
                                              "color": DISCORD}))
@@ -2598,6 +2647,14 @@ def toast_candidates(c, page, t):
     if st:
         cands.append((st[2], {"source": "Streaming", "title": st[0], "body": st[1], "icon": None,
                               "color": HOT if st[1].startswith("connecté") else MUTED}))
+    ce = c.claude_event if c.settings.get("claude_reminders", True) else None
+    if ce:
+        cands.append((ce[2], {"page": "claude", "session": ce[3], "source": "Claude",
+                              "title": ce[0], "body": ce[1], "icon": None, "color": CLAUDE}))
+    we = c.weather.event if c.weather and c.settings.get("rain_toasts", True) else None
+    if we:
+        cands.append((we[2], {"page": "weather", "source": "Météo", "title": we[0],
+                              "body": we[1], "icon": None, "color": ACCENT}))
     fe = c.fuel.event if c.fuel and c.settings.get("fuel_toasts", True) else None
     if fe:
         cands.append((fe[2], {"page": "fuel", "source": "Carburant", "title": fe[0], "body": fe[1],
@@ -2644,8 +2701,10 @@ def toast_candidates(c, page, t):
                               "icon": None, "color": ACCENT}))
     be = c.batteries.event if c.batteries else None
     if be:
-        cands.append((be[2], {"page": "batteries", "source": "Batterie", "title": be[0], "body": be[1], "icon": None,
-                              "color": WARN}))
+        cands.append((be[2], {"page": "batteries", "source": "Batterie", "title": be[0],
+                              "body": be[1], "icon": None,
+                              "color": OK if be[1].startswith("connecté") else
+                              MUTED if be[1] == "déconnecté" else WARN}))
     fe = c.fans.event if c.fans else None
     if fe:
         cands.append((fe[2], {"page": "system", "source": "Ventilos", "title": fe[0], "body": fe[1], "icon": None,
@@ -2741,19 +2800,22 @@ def page_discord(img, d, dc, t):
         d.text((W // 2, (y + 236) // 2), "Aucun message reçu depuis le lancement",
                font=font(11), fill=MUTED, anchor="mm")
         return
-    rows = (236 - y) // 36
+    rows = (238 - y) // 36
     for i, n in enumerate(list(dc.notifications)[:rows]):
         ry = y + i * 36
-        avatar(img, d, dc.avatars, n["icon"], 20, ry + 16, 24, n["author"])
+        # panneau du thème (reflet G19, verre Aero…) comme les autres listes, liseré Discord
+        panel(d, (6, ry - 1, W - 6, ry + 33), 6)
+        d.rounded_rectangle((6, ry - 1, 9, ry + 33), 2, fill=DISCORD)
+        avatar(img, d, dc.avatars, n["icon"], 22, ry + 16, 24, n["author"])
         author = fit(d, n["author"], font(12, True), 150)
-        d.text((40, ry + 8), author, font=font(12, True), fill=TEXT, anchor="lm")
+        d.text((42, ry + 8), author, font=font(12, True), fill=TEXT, anchor="lm")
         where = n.get("where")
         if where:
-            ax = 40 + d.textlength(author, font=font(12, True)) + 6
+            ax = 42 + d.textlength(author, font=font(12, True)) + 6
             d.text((ax, ry + 9), fit(d, where, font(9), 270 - ax), font=font(9),
                    fill=MUTED, anchor="lm")
-        d.text((W - 10, ry + 8), fmt_age(t - n["time"]), font=font(9), fill=MUTED, anchor="rm")
-        d.text((40, ry + 25), fit(d, n["body"], font(11), W - 52), font=font(11),
+        d.text((W - 12, ry + 8), fmt_age(t - n["time"]), font=font(9), fill=MUTED, anchor="rm")
+        d.text((42, ry + 24), fit(d, n["body"], font(11), W - 56), font=font(11),
                fill=dim(TEXT, 0.85), anchor="lm")
 
 
@@ -2769,7 +2831,7 @@ def render(page, c, t=None, post=True):
     pages = c.pages or c.settings["pages"]
     if page == "media":  # les fonds pleine page sont posés avant le bandeau
         if c.show_lyrics and has_lyrics(c):
-            page_lyrics(img, d, c.media, c.lyrics, t)
+            page_lyrics(img, d, c.media, c.lyrics, t, c.settings.get("animations", True))
         else:
             page_media(img, d, c.media, t, c.volume, has_lyrics(c))
     elif page == "games":
@@ -2786,6 +2848,8 @@ def render(page, c, t=None, post=True):
         page_docker(d, c, t)
     elif page == "fuel":
         page_fuel(d, c, t)
+    elif page == "toasts":
+        page_toasts(img, d, c, t)
     elif page == "screen":
         page_screen(img, d, c, t)
     elif page == "network":
@@ -3207,7 +3271,12 @@ def page_vpn(d, v, t):
 LYRICS_OFFSET = 0.3   # s d'avance : la ligne s'affiche au moment où elle commence à être chantée
 
 
-def page_lyrics(img, d, m, lyrics, t):
+LYRICS_MOVE = 0.4        # s : la nouvelle ligne remonte à sa place
+
+
+def page_lyrics(img, d, m, lyrics, t, animate=True):
+    """Paroles ; animées (si `animate`) d'après la position dans le morceau : le bloc remonte
+    en douceur quand une ligne commence."""
     from .lyrics import current_index
 
     if not m or not m.title:
@@ -3247,6 +3316,14 @@ def page_lyrics(img, d, m, lyrics, t):
     if synced:
         i = current_index(synced, pos)
         cur = synced[i][1] if i >= 0 else ""
+        start = synced[i][0] if i >= 0 else 0.0
+        move = 1.0
+        if animate and i >= 0:
+            k = (pos - start) / LYRICS_MOVE
+            move = 1 - (1 - min(1.0, max(0.0, k))) ** 3
+        # tout le bloc est dessiné sur un calque, posé plus bas au début d'une ligne
+        layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
         # ligne en cours, mise en avant (taille réduite et jusqu'à 3 lignes si elle est longue,
         # jamais coupée) ; une ou deux lignes avant, estompées, et jusqu'à trois après
         lines_cur, size = fit_block(d, cur or "♪", W - 20, (17, 15, 13, 12), 3, True)
@@ -3268,6 +3345,9 @@ def page_lyrics(img, d, m, lyrics, t):
                 text, sz = shrink_line(d, synced[i + j][1], W - 24, (12, 11, 10, 9))
                 d.text((W // 2, yy), text, font=font(sz),
                        fill=dim(TEXT, fade_next[0] - fade_next[1] * j), anchor="mm")
+        shift = int(round((1 - move) * 20))
+        clip = layer.crop((0, 0, W, H - 12 - shift))   # pas sur la barre de progression
+        img.paste(clip, (0, shift), clip)
         return
 
     # paroles non synchronisées : on défile au prorata de la position dans le morceau

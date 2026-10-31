@@ -35,6 +35,7 @@ EFFECTS = {
     "done": ("blink", 0, 100, 20, 0),
     "discord": ("blink", 35, 40, 100, 0),
     "notif": ("blink", 100, 100, 100, 0),
+    "remind": ("blink", 100, 65, 0, 0),       # rappel : Claude attend depuis longtemps
     "whatsapp": ("blink", 0, 100, 25, 0),     # notification WhatsApp : vert
     "snap": ("blink", 100, 95, 0, 0),         # notification Snapchat : jaune
 }

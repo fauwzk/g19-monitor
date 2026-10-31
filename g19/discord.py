@@ -380,6 +380,14 @@ class DiscordClient:
         m = re.search(r"\((.*)\)\s*$", title or "")
         return m.group(1) if m else ""
 
+    def channel_url(self, cid):
+        """Lien qui ouvre le salon ou le groupe du message dans Discord, None si inconnu."""
+        ch = self._channels.get(cid)
+        if not cid or not ch:
+            return None
+        where = ch["guild_id"] if ch["guild_id"] and ch["type"] not in (1, 3) else "@me"
+        return f"discord://-/channels/{where}/{cid}"
+
     def _fill_where(self):
         """Complète le lieu des messages déjà reçus quand Discord répond."""
         for n in self.notifications:

@@ -46,6 +46,7 @@ def _startup_failed():
 try:
     from g19 import config, instance, mixer, night, remote, screen, settings, version
     from g19.alerts import AlertMonitor
+    from g19.anim import Transitions
     from g19.updater import Updater
     from g19.amd_driver import AmdDriver
     from g19.docker_mon import DockerMonitor
@@ -307,6 +308,99 @@ def launched_by_agent():
 BACK_AFTER_GAME = 5      # s après la fin de la partie (sans récapitulatif) avant de revenir
 
 
+TOAST_LOG = "toast_log.json"
+TOAST_LOG_SIZE = 20
+CLAUDE_REMIND = 600       # s d'attente avant le premier rappel, puis entre deux rappels
+
+
+def load_toast_log():
+    """Historique des bandeaux, repris d'un lancement à l'autre (sans les images)."""
+    from collections import deque
+    items = config.load(TOAST_LOG, []) or []
+    return deque((n for n in items if isinstance(n, dict) and n.get("at")),
+                 maxlen=TOAST_LOG_SIZE)
+
+
+def log_toasts(c, cands):
+    """Ajoute les nouveaux bandeaux (tous, même ceux masqués par un plus récent) en tête."""
+    last = c.toast_log[0]["at"] if c.toast_log else 0
+    fresh = sorted((n for n in cands if n["at"] > last), key=lambda n: n["at"])
+    if not fresh:
+        return
+    for n in fresh:
+        color = n.get("color")
+        c.toast_log.appendleft({k: n.get(k) for k in ("source", "title", "body", "page", "url",
+                                                      "session", "at", "icon")}
+                               | {"color": list(color) if isinstance(color, tuple) else color})
+    config.save(TOAST_LOG, [{k: v for k, v in n.items() if k != "icon"}
+                                     for n in c.toast_log])
+
+
+def open_toast(c, n, page, pages):
+    """OK sur un bandeau (ou une ligne de l'historique) : le salon Discord, la session
+    Claude, sinon la page correspondante. Renvoie la page à afficher."""
+    if n.get("url"):
+        try:
+            launch(n["url"])
+            return page
+        except OSError as e:
+            log.warning("ouverture de %s impossible : %s", n["url"], e)
+    if n.get("session"):
+        sess = next((s for s in c.sessions if s.session_id == n["session"]), None)
+        if sess and focus_session(sess):
+            return page
+    return n["page"] if n.get("page") in pages else page
+
+
+def claude_reminder(c, now, reminded):
+    """Session Claude qui attend ta réponse depuis CLAUDE_REMIND s : bandeau, puis de
+    nouveau toutes les CLAUDE_REMIND s. True quand un rappel part (le clavier clignote)."""
+    if not c.settings.get("claude_reminders", True):
+        return False
+    waiting = {s.session_id: s for s in c.sessions if s.state == "waiting"}
+    for sid in list(reminded):
+        if sid not in waiting:
+            del reminded[sid]
+    for sid, s in waiting.items():
+        if (s.age or 0) >= CLAUDE_REMIND and now - reminded.get(sid, 0) >= CLAUDE_REMIND:
+            reminded[sid] = now
+            minutes = int((s.age or 0) // 60)
+            msg = (s.message or "").strip()
+            c.claude_event = (f"Claude attend · {s.name}",
+                              f"depuis {minutes} min" + (f" · {msg}" if msg else ""), now, sid)
+            return True
+    return False
+
+
+def subview(c, page):
+    """Vue secondaire d'une page, ouverte avec OK (paroles, graphe du GPU, historique, écran
+    recopié) : en changer donne un fondu, comme le panneau des ventilateurs."""
+    if page == "media":
+        return bool(c.show_lyrics)
+    if page == "gpu":
+        return c.gpu_view
+    if page == "history":
+        return c.history_view
+    if page == "screen" and c.mirror:
+        return c.mirror.screen
+    return None
+
+
+def close_subview(c, page):
+    """Referme la vue secondaire ouverte avec OK (paroles, autre graphe du GPU, charge de
+    l'historique) ; True si une vue était ouverte (Annuler ne va alors pas à la 1re page)."""
+    if page == "media" and c.show_lyrics:
+        c.show_lyrics = False
+    elif page == "gpu" and c.gpu_view != GPU_VIEWS[0]:
+        c.gpu_view = GPU_VIEWS[0]
+        guarded("état", settings.save_state, gpu_view=c.gpu_view)
+    elif page == "history" and c.history_view != "temp":
+        c.history_view = "temp"
+    else:
+        return False
+    return True
+
+
 def apply_audio_profile(c, i):
     """Profil audio n° `i` des réglages (icône de la barre des tâches, menu du G19, utilitaire) ;
     le bandeau arrive une fois appliqué par le fil audio."""
@@ -430,6 +524,8 @@ def run():
     agent_warned = 0.0
     lgs_checked_for = None      # lancement de LGS déjà vérifié (une fois par lancement)
     last_guard_check = time.time()
+    reminded = {}               # session Claude en attente → dernier rappel
+    c_log = load_toast_log()
     last_lgs_check = 0.0
     dog = Watchdog()           # couvre aussi le démarrage (écran, capteurs, ventilos)
 
@@ -439,6 +535,7 @@ def run():
     c = make_ctx()
     c.settings = watch.settings
     c.gpu_view = settings.load_state().get("gpu_view") or "both"
+    c.toast_log = c_log
     splash.step("ventilateurs…", 0.6)
     c.fans = FanControl()  # seule l'appli pilote les ventilos (pas l'aperçu de l'utilitaire)
     dog.fans = c.fans
@@ -466,6 +563,7 @@ def run():
     pattern_at = None       # mire de réglage de l'écran affichée depuis
     color_test = None       # (effet, "#rrggbb", fin) : couleur essayée depuis l'utilitaire
     last_frame, render_error_at = None, 0.0
+    transitions = Transitions()   # glissement entre pages, fondu à l'ouverture d'un écran
     last_ended = c.games.ended
     fan_panel = None        # indice du profil sous le curseur quand le panneau ventilos est ouvert
     splash.finish()
@@ -491,7 +589,9 @@ def run():
                 guarded("alertes", c.alerts.update, c, now)
                 guarded("historique", c.history.add, c.stats, c.gpu.s, now)
                 guarded("réseau", c.net.check_alert, bool(c.gpu.game), now)
-                guarded("absence", lambda: c.away.update(c, now, toast_candidates(c, None, now)))
+                cands = guarded("bandeaux", toast_candidates, c, None, now) or []
+                guarded("absence", lambda: c.away.update(c, now, cands))
+                guarded("historique des bandeaux", log_toasts, c, cands)
                 if cfg["backlight"] and now - last_lgs_check >= 60:
                     last_lgs_check = now
                     lgs_checked_for = guarded("LGS", check_lgs_lighting, c, now, lgs_checked_for) \
@@ -515,6 +615,9 @@ def run():
             if now - last_claude >= 0.5:
                 c.sessions = read_sessions(now)
                 last_claude = now
+                if guarded("rappel Claude", claude_reminder, c, now, reminded) and \
+                        cfg["backlight"] and cfg["backlight_waiting"] and not quiet:
+                    backlight.flash("remind", 2, blink_ms(cfg))
                 # la liste est retriée (état, activité) : le curseur suit la même session
                 ids = [s.session_id for s in c.sessions]
                 if c.claude_sel_id in ids:
@@ -539,6 +642,11 @@ def run():
                 if req and req.get("at", 0) > last_test and req.get("kind") == "update":
                     last_test = req["at"]
                     c.updater.check_now()
+                if req and req.get("at", 0) > last_test and req.get("kind") == "anim":
+                    last_test = req["at"]
+                    order = visible_pages(c, cfg)
+                    if page in order:
+                        page = order[(order.index(page) + 1) % len(order)]
                 if req and req.get("at", 0) > last_test and req.get("kind") == "pattern":
                     last_test = req["at"]
                     pattern_at = time.time()
@@ -642,7 +750,7 @@ def run():
                     if n and (b == "cancel" or n.get("open")):
                         c.toast_closed = now
                         if b == "ok":
-                            page = n["page"]
+                            page = open_toast(c, n, page, pages)
                         continue
                 # le carrousel passe avant tout le reste : il recouvre l'écran
                 if cover.open:
@@ -710,6 +818,8 @@ def run():
                 if b in ("left", "right"):
                     step = 1 if b == "right" else -1
                     page = pages[(pages.index(page) + step) % len(pages)]
+                elif b == "cancel" and close_subview(c, page):
+                    pass                     # vue ouverte avec OK : Annuler la referme
                 elif b == "cancel":
                     page = pages[0]
                 elif page == "media" and b == "ok" and (c.show_lyrics or has_lyrics(c)):
@@ -747,6 +857,12 @@ def run():
                     c.fuel_scroll += 1 if b == "down" else -1
                 elif page == "fuel" and b == "ok":
                     c.fuel.check_now()       # relire les prix tout de suite
+                elif page == "toasts" and b in ("up", "down"):
+                    c.toast_sel += 1 if b == "down" else -1
+                elif page == "toasts" and b == "ok" and c.toast_log:
+                    log_items = list(c.toast_log)
+                    page = open_toast(c, log_items[min(c.toast_sel, len(log_items) - 1)], page,
+                                      pages)
                 elif page == "docker" and b in ("up", "down"):
                     c.docker_scroll += 1 if b == "down" else -1
                 elif page == "history" and b == "ok":
@@ -829,6 +945,16 @@ def run():
                 else:
                     frame_img = render(page, c, now)
                 last_frame = frame_img
+                mode = ("cover" if cover.open else "menu" if menu.open else
+                        "fans" if fan_panel is not None else "recap" if recap else
+                        "away" if c.away.summary else
+                        "idle" if c.away.active and cfg.get("idle_screen", True) else "page")
+                frame_img = transitions.frame((mode, page if mode == "page" else None,
+                                               subview(c, page) if mode == "page" else None),
+                                              frame_img, now, pages,
+                                              cfg.get("animations", True),
+                                              cfg.get("animation_style", "slide"),
+                                              cfg.get("animation_speed", "normal"))
             except Exception:
                 # une page qui ne se dessine pas ne doit pas arrêter l'appli : on garde l'image
                 # précédente et on note l'erreur (une fois par minute au plus)
