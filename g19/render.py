@@ -2335,8 +2335,15 @@ def _cover_2010(art, size):
     cov = Image.alpha_composite(cov, gloss)
     rh = size * 2 // 5
     refl = cov.transpose(Image.FLIP_TOP_BOTTOM).crop((0, 0, size, rh))
-    fade = Image.linear_gradient("L").resize((size, rh)).point(lambda v: max(0, 90 - v * 90 // 255))
-    refl.putalpha(ImageChops.multiply(refl.getchannel("A"), fade))
+    # reflet sur du verre : éclairci (une pochette sombre en bas resterait invisible sur le
+    # fond sombre), plus présent en haut, et une arête claire au pied de la pochette
+    ra = refl.getchannel("A")
+    rgb = ImageChops.screen(refl.convert("RGB"), Image.new("RGB", (size, rh), (52, 56, 64)))
+    refl = rgb.convert("RGBA")
+    fade = Image.linear_gradient("L").resize((size, rh)).point(
+        lambda v: max(0, 130 - v * 130 // 255))
+    refl.putalpha(ImageChops.multiply(ra, fade))
+    ImageDraw.Draw(refl).line((6, 0, size - 7, 0), fill=(255, 255, 255, 70))
     _cover_cache[key] = (art, cov, refl)
     return cov, refl
 
@@ -3088,6 +3095,10 @@ def toast_candidates(c, page, t):
         cands.append((c.media_changed, {"page": "media", "source": m.app or "Média", "title": m.title,
                                         "body": m.artist, "icon": m.art,
                                         "color": media_accent(m)}))
+    ly = getattr(c.lyrics, "event", None) if c.settings.get("media_toasts", True) else None
+    if ly:                   # service des paroles en panne (un bandeau par panne)
+        cands.append((ly[2], {"page": "media", "source": "Paroles", "title": ly[0],
+                              "body": ly[1], "icon": None, "color": WARN}))
     mt = c.media_toggle      # même morceau mis en pause ou relancé : bandeau comme les autres
     if key and mt and c.settings.get("pause_toasts", True) and page != "media":
         cands.append((mt[0], {"page": "media",
