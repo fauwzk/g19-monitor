@@ -243,17 +243,30 @@ applet dans Logitech Gaming Software.
 
 Lancement : `start_g15.pyw` (sans console), arrêt par son icône dans la zone de notification
 ou `python g15_monitor.py --stop`. **Réglages** dans leur propre utilitaire, `config_g15.pyw`
-(ou l'icône → Réglages) : lancer / arrêter l'appli, démarrage avec Windows, pages et leur
-ordre, bandeaux, fenêtre de volume, images par seconde, avec l'aperçu de l'écran en direct.
-Ils sont enregistrés dans `g15_settings.json`, à part de ceux du G19.
+(ou l'icône → Réglages) : lancer / arrêter l'appli, pages et leur ordre, bandeaux, fenêtre de volume, images par seconde, avec l'aperçu de l'écran en direct.
+Ils sont enregistrés dans `g15_settings.json`, à part de ceux du G19. Le texte est rendu par
+Windows (Tahoma) pour rester net sans lissage.
 
-**Le gardien choisit l'appli selon le clavier branché** : celui qui relance l'appli du G19
-quand elle plante regarde aussi quels claviers sont branchés. Brancher un G15, G510 ou G13
-lance G15 Monitor, brancher le G19 lance G19 Monitor, et chacune est relancée si elle plante
-tant que son clavier est là. Une appli quittée exprès n'est plus relancée jusqu'au prochain
-branchement de son clavier. G15 Monitor n'est géré qu'après un premier lancement, et l'option
-« Lancer au branchement du clavier » de son utilitaire permet de le couper. Le texte est rendu par
-Windows (Small Fonts, Tahoma) pour rester net sans lissage.
+### Le gardien gère les deux applis
+
+Le **démarrage avec Windows** lance le **gardien**, pas une appli : il démarre celle de chaque
+clavier branché (G19 Monitor pour le G19, G15 Monitor pour un G15, G510 ou G13), puis reste
+en veille. Tout se règle dans le **panneau du gardien** (`config_guard.pyw`, ou « Gardien… »
+dans le menu de l'icône, ou le bouton des utilitaires) : démarrage avec Windows, claviers
+branchés, état de chaque appli (Lancer / Arrêter / Réglages), gardien en marche ou arrêté,
+et son journal. En ligne de commande : `python install_startup.py [--uninstall]`.
+
+- **Branchement d'un clavier** : l'appli qui lui correspond se lance en quelques secondes.
+- **Plantage** : l'appli est relancée (espacement croissant si elle replante), tant que son
+  clavier est branché.
+- **Appli quittée exprès** (icône, utilitaire) : pas de relance jusqu'au prochain
+  branchement de son clavier.
+- G15 Monitor n'est géré qu'après un premier lancement, et l'option « Le gardien s'occupe de
+  G15 Monitor » du panneau permet de le couper.
+
+Les anciennes entrées de démarrage (une par appli) sont remplacées automatiquement. Si les
+claviers ne peuvent pas être détectés (`hidapi` absent), le gardien lance l'appli du G19
+comme avant.
 
 ## Installation
 

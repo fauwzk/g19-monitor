@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHBoxLayout, QLa
                                QListWidget, QListWidgetItem, QMainWindow, QPushButton,
                                QScrollArea, QVBoxLayout, QWidget)
 
-import install_startup  # noqa: E402
 from g19 import config, instance, mono  # noqa: E402
 from g19.qtkit import (Card, Toggle, bind_spin, bind_toggle, hbox, label,  # noqa: E402
                        pil_to_pixmap, spin, stylesheet, title_bar)
@@ -115,13 +114,11 @@ class ConfigG15(QMainWindow):
         self.start_btn.clicked.connect(self._start_stop)
         card.row("G15 Monitor", hbox(self.state_pill, self.start_btn),
                  "L'applet « PC Monitor (G15) » dans Logitech Gaming Software.")
-        auto = Toggle(install_startup.is_installed(mono=True))
-        auto.toggled.connect(lambda on: install_startup.set_installed(on, mono=True))
-        card.row("Lancer avec Windows", auto,
-                 "Ajoute G15 Monitor au démarrage, à côté de celui du G19.")
-        self._toggle(card, "auto_launch", "Lancer au branchement du clavier",
-                     "Le gardien démarre G15 Monitor quand un G15, G510 ou G13 est branché, "
-                     "et le relance s'il plante.")
+        guard = QPushButton("Panneau du gardien")
+        guard.clicked.connect(self._open_guard)
+        card.row("Gardien", guard,
+                 "Démarrage avec Windows, lancement au branchement du clavier, état des deux "
+                 "applis.")
         self.g19_note = card.note("")
         return card
 
@@ -251,6 +248,9 @@ class ConfigG15(QMainWindow):
             self.page_label.setText(f"enregistrement impossible : {e}")
 
     # --- appli : lancer / arrêter ---
+
+    def _open_guard(self):
+        instance._popen([str(APP_DIR / "config_guard.pyw")])
 
     def _start_stop(self):
         if instance.is_running(instance.MONO_MUTEX):

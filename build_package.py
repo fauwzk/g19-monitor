@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 APP_FILES = ["g19_monitor.py", "config_g19.pyw", "start_g19.pyw", "claude_hook.py",
-             "g15_monitor.py", "start_g15.pyw", "config_g15.pyw",
+             "g15_monitor.py", "start_g15.pyw", "config_g15.pyw", "start_guard.pyw", "config_guard.pyw",
              "install_hooks.py", "install_startup.py", "setup_discord.py", "requirements.txt",
              "update.cmd", "README.md", "g19.ico"]
 INSTALLER = ["Installer.cmd", "Desinstaller.cmd", "LISEZMOI.txt", "install.ps1", "uninstall.ps1",

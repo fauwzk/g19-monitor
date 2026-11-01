@@ -14,6 +14,8 @@ MUTEX = "Local\\G19PCMonitor"
 QUIT_EVENT = "Local\\G19PCMonitorQuit"
 GUARD_MUTEX = "Local\\G19PCMonitorGuard"         # gardien qui relance l'appli si elle plante
 GUARD_STOP = "Local\\G19PCMonitorGuardStop"      # posé par l'appli quand on la quitte exprès
+GUARD_QUIT = "Local\\G19PCMonitorGuardQuit"      # arrêt du gardien (panneau du gardien)
+GUARD_STATE = "guard_state.json"                 # état publié par le gardien, pour son panneau
 # version monochrome (G15 / G510) : ses propres noms, elle tourne à côté de celle du G19
 MONO_MAIN = APP_DIR / "g15_monitor.py"
 MONO_MUTEX = "Local\\G15PCMonitor"
@@ -66,6 +68,20 @@ def is_running(name=MUTEX):
 
 def guard_running():
     return is_running(GUARD_MUTEX)
+
+
+def stop_guard():
+    """Demande au gardien de s'arrêter (les applis continuent de tourner)."""
+    h = _k32.OpenEventW(EVENT_MODIFY_STATE, False, GUARD_QUIT)
+    if h:
+        _k32.SetEvent(h)
+        _k32.CloseHandle(h)
+    return bool(h)
+
+
+def start_guard():
+    if not guard_running():
+        _popen(["-m", "g19.guard"])
 
 
 def ensure_guard():

@@ -33,6 +33,11 @@ def make_icon(state=None, unread=False):
     return img.resize((SIZE, SIZE), Image.LANCZOS)
 
 
+def open_guard():
+    """Panneau du gardien (config_guard.pyw)."""
+    instance._popen([str(instance.APP_DIR / "config_guard.pyw")])
+
+
 def open_config():
     exe = sys.executable.replace("python.exe", "pythonw.exe")
     subprocess.Popen([exe, str(instance.APP_DIR / "config_g19.pyw")], cwd=instance.APP_DIR,
@@ -72,6 +77,7 @@ class Tray:
                              visible=lambda _: bool(self.profiles)),
             pystray.MenuItem("Lancer un test de débit", lambda: self.commands.put(("speedtest",))),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Gardien…", lambda: open_guard()),
             pystray.MenuItem("Journal", lambda: _open(instance.APP_DIR / "g19.log")),
             pystray.MenuItem("Redémarrer", lambda: self.commands.put(("restart",))),
             pystray.MenuItem("Quitter", lambda: self.commands.put(("quit",))),

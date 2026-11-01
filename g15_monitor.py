@@ -202,6 +202,7 @@ def make_tray(state):
     icon = pystray.Icon("G15Monitor", img, "G15 Monitor", menu=pystray.Menu(
         pystray.MenuItem("Page suivante", lambda: state.update(next=True)),
         pystray.MenuItem("Réglages", open_config),
+        pystray.MenuItem("Gardien…", lambda: instance._popen([str(here / "config_guard.pyw")])),
         pystray.MenuItem("Quitter", lambda: state.update(quit=True))))
     threading.Thread(target=icon.run, daemon=True, name="icône").start()
     return icon

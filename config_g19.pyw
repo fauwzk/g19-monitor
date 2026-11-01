@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QC
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 import install_hooks  # noqa: E402
-import install_startup  # noqa: E402
 from g19 import (afterburner, backup, config, fuel, instance, night, remote, rtss, screen,  # noqa: E402
                  settings, steam_live, version, volume)
 from g19 import discord as discord_rpc  # noqa: E402
@@ -1099,10 +1098,12 @@ class ConfigApp(QMainWindow):
         card.row("Moniteur G19", hbox(self.button("Démarrer", lambda: self._control("start")),
                                       self.button("Redémarrer", lambda: self._control("restart")),
                                       self.button("Arrêter", lambda: self._control("stop"))),
-                 "Un gardien la relance si elle plante ; Arrêter le coupe aussi.")
+                 "Le gardien la relance si elle plante ; Arrêter ne la fait pas relancer.")
+        card.row("Gardien", self.button("Panneau du gardien", self._open_guard),
+                 "Démarrage avec Windows, claviers branchés, état des deux applis (G19 et "
+                 "G15 / G510).")
         for module, text, hint in (
-                (install_startup, "Lancer au démarrage de Windows", None),
-                (install_hooks, "Voyant Claude", "Hooks dans ~/.claude/settings.json.")):
+                (install_hooks, "Voyant Claude", "Hooks dans ~/.claude/settings.json."),):
             t = Toggle(module.is_installed())
             self.toggles.append(t)
             t.toggled.connect(lambda on, m=module, w=t: self._apply_flag(m, w, on))
@@ -1162,6 +1163,11 @@ class ConfigApp(QMainWindow):
                     instance.spawn()
         threading.Thread(target=run, daemon=True).start()
         self._flash({"start": "Démarrage…", "restart": "Redémarrage…", "stop": "Arrêt…"}[action])
+
+    def _open_guard(self):
+        exe = sys.executable.replace("python.exe", "pythonw.exe")
+        subprocess.Popen([exe, str(APP_DIR / "config_guard.pyw")], cwd=APP_DIR,
+                         creationflags=subprocess.DETACHED_PROCESS)
 
     def _apply_flag(self, module, toggle, on):
         try:
