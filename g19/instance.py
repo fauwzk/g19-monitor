@@ -14,6 +14,11 @@ MUTEX = "Local\\G19PCMonitor"
 QUIT_EVENT = "Local\\G19PCMonitorQuit"
 GUARD_MUTEX = "Local\\G19PCMonitorGuard"         # gardien qui relance l'appli si elle plante
 GUARD_STOP = "Local\\G19PCMonitorGuardStop"      # posé par l'appli quand on la quitte exprès
+# version monochrome (G15 / G510) : ses propres noms, elle tourne à côté de celle du G19
+MONO_MAIN = APP_DIR / "g15_monitor.py"
+MONO_MUTEX = "Local\\G15PCMonitor"
+MONO_QUIT_EVENT = "Local\\G15PCMonitorQuit"
+MONO_GUARD_STOP = "Local\\G15PCMonitorGuardStop"   # G15 Monitor quittée exprès
 
 ERROR_ALREADY_EXISTS = 183
 SYNCHRONIZE = 0x00100000
@@ -35,10 +40,10 @@ _k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
 class SingleInstance:
     """Tient le mutex nommé tant que l'appli tourne ; expose la demande d'arrêt."""
 
-    def __init__(self):
-        self.mutex = _k32.CreateMutexW(None, False, MUTEX)
+    def __init__(self, mutex=MUTEX, quit_event=QUIT_EVENT):
+        self.mutex = _k32.CreateMutexW(None, False, mutex)
         self.already_running = ctypes.get_last_error() == ERROR_ALREADY_EXISTS
-        self.event = _k32.CreateEventW(None, True, False, QUIT_EVENT)
+        self.event = _k32.CreateEventW(None, True, False, quit_event)
         if not self.already_running:
             _k32.ResetEvent(self.event)
 
@@ -72,26 +77,26 @@ def ensure_guard():
     return True
 
 
-def stopped_on_purpose():
+def stopped_on_purpose(event=GUARD_STOP):
     """L'appli s'arrête parce qu'on l'a quittée (icône, utilitaire, --stop) : le gardien ne
-    doit pas la relancer, il s'arrête aussi."""
-    h = _k32.OpenEventW(EVENT_MODIFY_STATE, False, GUARD_STOP)
+    la relance pas (jusqu'à ce que son clavier soit rebranché)."""
+    h = _k32.OpenEventW(EVENT_MODIFY_STATE, False, event)
     if h:
         _k32.SetEvent(h)
         _k32.CloseHandle(h)
 
 
-def stop(timeout=10):
+def stop(timeout=10, mutex=MUTEX, quit_event=QUIT_EVENT):
     """Demande à l'instance en cours de s'arrêter et attend qu'elle soit partie."""
-    h = _k32.OpenEventW(EVENT_MODIFY_STATE, False, QUIT_EVENT)
+    h = _k32.OpenEventW(EVENT_MODIFY_STATE, False, quit_event)
     if not h:
-        return not is_running()
+        return not is_running(mutex)
     _k32.SetEvent(h)
     _k32.CloseHandle(h)
     end = time.time() + timeout
-    while is_running() and time.time() < end:
+    while is_running(mutex) and time.time() < end:
         time.sleep(0.2)
-    return not is_running()
+    return not is_running(mutex)
 
 
 def wait_exit(pid, timeout=15):
@@ -118,13 +123,19 @@ def _popen(args, env=None):
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def source_files(main=MAIN):
+    """Code surveillé : le point d'entrée et g19/*.py."""
+    return [main, *sorted((APP_DIR / "g19").glob("*.py"))]
+
+
 class SourceWatcher:
     """Détecte une modification du code de l'appli (g19_monitor.py et g19/*.py).
 
     `background` : les fichiers sont relus dans un fil à part, chaque seconde ; un disque qui
     tarde à répondre (mise en veille, antivirus) ne fige plus la boucle de l'écran."""
 
-    def __init__(self, background=False):
+    def __init__(self, background=False, main=None):
+        self.main = main or MAIN       # point d'entrée surveillé en plus de g19/*.py
         self.mtimes = self._scan()
         self._pending = set()
         self._lock = threading.Lock()
@@ -132,11 +143,9 @@ class SourceWatcher:
             threading.Thread(target=self._run, daemon=True, name="sources").start()
         self.background = background
 
-    @staticmethod
-    def _scan():
-        files = [MAIN, *sorted((APP_DIR / "g19").glob("*.py"))]
+    def _scan(self):
         out = {}
-        for p in files:
+        for p in source_files(self.main):
             try:
                 out[p] = p.stat().st_mtime
             except OSError:

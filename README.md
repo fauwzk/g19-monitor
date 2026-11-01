@@ -11,7 +11,7 @@ thèmes, un menu au clavier et un utilitaire de réglages. Windows, Python.
 ## Sommaire
 
 - [Aperçu](#aperçu) · [Thèmes](#thèmes) · [Galerie complète](#galerie-complète) ·
-  [Installation](#installation) · [Mises à jour](#mises-à-jour-automatiques) · [Utilisation](#utilisation) ·
+  [Version G15 / G510](#version-g15--g510-monochrome) · [Installation](#installation) · [Mises à jour](#mises-à-jour-automatiques) · [Utilisation](#utilisation) ·
   [Pages](#pages-en-détail) · [Fonctions](#fonctions) · [Sources](#sources-et-prérequis) ·
   [Développement](#développement)
 
@@ -221,6 +221,39 @@ au repos, résumé au retour et démarrage. Clique sur un thème pour l'ouvrir.
 ![Tous les écrans dans le thème Nokia / Symbian](docs/images/themes/symbian.png)
 
 </details>
+
+## Version G15 / G510 (monochrome)
+
+**G15 Monitor** est une version à part pour l'écran monochrome 160×43 des G15, G510 et G13.
+Elle tourne **en même temps** que l'appli du G19 : chaque clavier a son écran, avec sa propre
+applet dans Logitech Gaming Software.
+
+![Les pages de la version G15 / G510](docs/images/g15.png)
+
+- **Pages** : horloge, système (CPU, GPU, RAM), GPU et FPS en jeu, média (titre qui défile,
+  progression), audio, sessions Claude, météo, réseau et disques.
+- **Par-dessus** : bandeaux (notifications Windows, changement de morceau, lecture / pause,
+  micro coupé) et fenêtre de volume, en encadré inversé.
+- **Les 4 touches** sous l'écran : page précédente, page suivante, puis deux actions selon la
+  page (lecture / suivant sur Média, volume − / + sur Audio). Leurs rôles s'affichent un
+  instant en bas dès qu'on en presse une.
+- **Ce qui est laissé de côté** : couleurs, pochettes, thèmes et animations, et tout ce qui
+  se pilote (ventilateurs, casque) : l'appli du G19 s'en charge. Les mises à jour, elle ne
+  les fait que si l'appli du G19 ne tourne pas, pour ne jamais en lancer deux à la fois.
+
+Lancement : `start_g15.pyw` (sans console), arrêt par son icône dans la zone de notification
+ou `python g15_monitor.py --stop`. **Réglages** dans leur propre utilitaire, `config_g15.pyw`
+(ou l'icône → Réglages) : lancer / arrêter l'appli, démarrage avec Windows, pages et leur
+ordre, bandeaux, fenêtre de volume, images par seconde, avec l'aperçu de l'écran en direct.
+Ils sont enregistrés dans `g15_settings.json`, à part de ceux du G19.
+
+**Le gardien choisit l'appli selon le clavier branché** : celui qui relance l'appli du G19
+quand elle plante regarde aussi quels claviers sont branchés. Brancher un G15, G510 ou G13
+lance G15 Monitor, brancher le G19 lance G19 Monitor, et chacune est relancée si elle plante
+tant que son clavier est là. Une appli quittée exprès n'est plus relancée jusqu'au prochain
+branchement de son clavier. G15 Monitor n'est géré qu'après un premier lancement, et l'option
+« Lancer au branchement du clavier » de son utilitaire permet de le couper. Le texte est rendu par
+Windows (Small Fonts, Tahoma) pour rester net sans lissage.
 
 ## Installation
 

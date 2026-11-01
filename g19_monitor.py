@@ -246,7 +246,7 @@ def tooltip(c, page):
 
 def sources_compile():
     try:
-        for path in instance.SourceWatcher._scan():
+        for path in instance.source_files():
             py_compile.compile(str(path), doraise=True)
         return True
     except py_compile.PyCompileError as e:

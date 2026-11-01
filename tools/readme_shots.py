@@ -464,6 +464,36 @@ def shot(name, img):
     img.resize((img.width * SCALE, img.height * SCALE), Image.NEAREST).save(OUT / f"{name}.png")
 
 
+def mono_sheet(c, t):
+    """Version G15 / G510 : toutes les pages monochromes et les encadrés, façon écran du
+    clavier (docs/images/g15.png)."""
+    from g19 import mono
+    shots = [(mono.PAGES[p], mono.render(p, c, t)) for p in mono.DEFAULT_PAGES]
+    img = mono.render("media", c, t)
+    mono.draw_banner(img, ImageDraw.Draw(img), "Discord · Léa", "on lance la partie à 21h ?")
+    shots.append(("Bandeau", img))
+    img = mono.render("system", c, t)
+    mono.draw_volume(img, ImageDraw.Draw(img), 0.62, False)
+    shots.append(("Volume", img))
+    img = mono.render("media", c, t)
+    mono.draw_keys(img, ImageDraw.Draw(img), "media")
+    shots.append(("Touches (Média)", img))
+    img = mono.render("audio", c, t)
+    mono.draw_keys(img, ImageDraw.Draw(img), "audio")
+    shots.append(("Touches (Audio)", img))
+    sc, cols = 3, 2
+    cw, ch = 160 * sc + 16, 43 * sc + 30
+    rows = (len(shots) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * cw + 16, rows * ch + 16), (246, 247, 249))
+    d = ImageDraw.Draw(sheet)
+    label = render.font(13, True)
+    for k, (name, im) in enumerate(shots):
+        x, y = 16 + (k % cols) * cw, 12 + (k // cols) * ch
+        d.text((x, y), name, font=label, fill=(60, 64, 75))
+        sheet.paste(mono.lcd_style(im, sc), (x, y + 18))
+    sheet.save(OUT / "g15.png", optimize=True)
+
+
 def main():
     c = demo_ctx()
     t = time.time()
@@ -520,6 +550,7 @@ def main():
         hero.paste(render.render(p, c, t).resize((640, 480), Image.NEAREST), (k * 664, 0))
     hero.save(OUT / "hero.png")
 
+    mono_sheet(c, t)
     themes, labels = gallery(c, t, recs)
     print(f"galerie : {len(themes)} thèmes × {len(labels)} écrans dans {GALLERY}")
     print("captures :", OUT)

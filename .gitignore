@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 g19.log
 g19.log.*
+g15.log
+g15.log.*
 
 # captures d'écran (contiennent des données personnelles : comptes, pochettes, amis…)
 captures/
