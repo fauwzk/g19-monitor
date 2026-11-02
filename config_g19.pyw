@@ -530,6 +530,9 @@ class ConfigApp(QMainWindow):
         self.toggle("screen_dither", card, "Dégradés lissés (tramage)",
                     "L'écran du G19 n'a que 65 000 couleurs : sans tramage, les fonds flous "
                     "(pochette, fond d'écran) se découpent en bandes.")
+        self.toggle("smooth_shapes", card, "Formes lissées (anticrénelage)",
+                    "Jauges, cercles, coins arrondis et traits en biais sans escaliers. "
+                    "Sans effet sur le thème Pixel.")
         card = self._card(lay, "Réglage à l'œil")
         card.row("Mire de réglage", hbox(self.button("Afficher la mire sur le G19",
                                                      self._show_pattern, True),
@@ -568,6 +571,9 @@ class ConfigApp(QMainWindow):
             lambda v: e.setText(", ".join(v or [])))
         self.spin("toast_seconds", card, "Durée d'affichage", 2, 30, suffix="s",
                   hint="Pendant qu'un bandeau est là : OK ouvre sa page, Annuler le ferme.")
+        self.spin("day_recap_hour", card, "Bilan du jour à", 0, 23, suffix="h",
+                  hint="Temps sur le PC, en jeu et morceaux écoutés, une fois par jour ; OK "
+                       "ouvre la page Bilan (0 : aucun bandeau).")
         card = self._card(lay, "Événements")
         for key, text, hint in (
                 ("media_toasts", "Changement de musique / média", None),

@@ -10,6 +10,7 @@ import math
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from . import render as R
+from .smooth import Draw
 
 SHAPED = ("aero", "analog", "hud", "tron", "paper", "paper_dark", "pixel", "xp", "symbian")
 PAPERS = ("paper", "paper_dark")
@@ -32,7 +33,7 @@ def clear():
 def _mask(w, h, r):
     def make():
         m = Image.new("L", (w, h), 0)
-        ImageDraw.Draw(m).rounded_rectangle((0, 0, w - 1, h - 1), r, fill=255)
+        Draw(m).rounded_rectangle((0, 0, w - 1, h - 1), r, fill=255)
         return m
     return _cached(("mask", w, h, r), make)
 
@@ -72,7 +73,7 @@ def canvas(name):
         def make():
             # grille au sol en perspective sous l'horizon, lueur à l'horizon
             img = Image.new("RGB", (W, H), R.BG)
-            d = ImageDraw.Draw(img)
+            d = Draw(img)
             hz = 132
             for y in range(hz - 14, hz + 2):
                 d.line((0, y, W, y), fill=R.mix(R.BG, R.ACCENT, 0.10 * (y - hz + 14) / 16))
@@ -90,7 +91,7 @@ def canvas(name):
     if name == "hud":
         def make():
             img = Image.new("RGB", (W, H), R.BG)
-            d = ImageDraw.Draw(img)
+            d = Draw(img)
             dot = R.mix(R.BG, R.ACCENT, 0.12)
             for y in range(32, H, 16):           # trame de points discrète
                 for x in range(8, W, 16):
@@ -125,7 +126,7 @@ def canvas(name):
                 col.putpixel((0, y), R.mix((24, 76, 130), (6, 22, 48), y / H))
             img = col.resize((W, H))
             streak = Image.new("L", (W, H), 0)
-            sd = ImageDraw.Draw(streak)
+            sd = Draw(streak)
             for k in range(40):
                 sd.arc((-120 + k, 60 + k, 420 - k, 380 - k), 200, 330, fill=int(90 - 2 * k), width=2)
             img.paste((140, 210, 255), (0, 0), streak.filter(ImageFilter.GaussianBlur(6)))
@@ -568,7 +569,7 @@ def _symbian_canvas():
         col.putpixel((0, y), R.mix((10, 46, 104), (2, 10, 30), y / H))
     img = col.resize((W, H))
     wave = Image.new("L", (W, H), 0)
-    wd = ImageDraw.Draw(wave)
+    wd = Draw(wave)
     for k in range(28):
         y0 = 150 + k * 2
         wd.arc((-160, y0 - 140, W + 160, y0 + 140), 200, 340, fill=max(0, 70 - k * 3), width=2)

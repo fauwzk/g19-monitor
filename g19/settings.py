@@ -57,6 +57,7 @@ PAGE_TITLES = {
     "fuel": "Carburant",
     "agenda": "Agenda",
     "home": "Maison",
+    "daily": "Bilan",
     "toasts": "Bandeaux",
     "screen": "Écran PC",
 }
@@ -92,6 +93,8 @@ DEFAULTS = {
     "animation_speed": "normal",     # fast, normal, slow
     "claude_reminders": True,        # rappel (bandeau + clavier) : Claude attend depuis 10 min
     "rain_toasts": True,             # bandeau « pluie dans ~30 min »
+    "day_recap_hour": 21,          # bandeau « Bilan du jour » à cette heure (0 : aucun)
+    "smooth_shapes": True,           # formes lissées (anticrénelage) sur le G19
     "agenda_remind": 10,             # rappel N min avant un événement de l'agenda (0 : aucun)
     "ha_entities": [],               # appareils Home Assistant de la page Maison (vide : auto)
     "fuel_toasts": True,             # bandeau quand un carburant est en rupture ou revient

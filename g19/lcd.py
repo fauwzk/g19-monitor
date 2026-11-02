@@ -81,6 +81,67 @@ class G19LCD:
         self.dll.LogiLcdShutdown()
 
 
+class LcdThread:
+    """Le G19 servi par un fil à part : la boucle principale dépose l'image et repart, sans
+    attendre Logitech Gaming Software (4 à 30 ms par image). Tous les appels au SDK passent
+    par ce fil, touches comprises (le SDK n'est pas prévu pour deux fils à la fois) ; une
+    image arrivée avant que la précédente soit partie la remplace."""
+    POLL = 0.01             # s entre deux lectures des touches quand aucune image n'arrive
+
+    def __init__(self, lcd):
+        import threading
+        self.lcd = lcd
+        self._frame = None
+        self._presses = []
+        self._cond = threading.Condition()
+        self._stop = False
+        self._thread = threading.Thread(target=self._run, daemon=True, name="écran G19")
+        self._thread.start()
+
+    @property
+    def sent(self):
+        return self.lcd.sent
+
+    def show(self, img):
+        with self._cond:
+            self._frame = img
+            self._cond.notify()
+
+    def update(self):
+        pass                # fait par le fil, juste après l'image
+
+    def pressed(self):
+        with self._cond:
+            out, self._presses = self._presses, []
+        return out
+
+    def _run(self):
+        while True:
+            with self._cond:
+                if self._frame is None and not self._stop:
+                    self._cond.wait(self.POLL)
+                if self._stop:
+                    return
+                img, self._frame = self._frame, None
+            try:
+                if img is not None:
+                    self.lcd.show(img)
+                    self.lcd.update()
+                new = self.lcd.pressed()
+            except (OSError, ValueError):
+                continue
+            if new:
+                with self._cond:
+                    self._presses.extend(sorted(new))
+
+    def close(self):
+        with self._cond:
+            self._stop = True
+            self._cond.notify()
+        self._thread.join(timeout=2)
+        self.lcd.close()
+
+
 # --- écran monochrome (G15, G510, G13…) -------------------------------------------------------
 
 MONO_W, MONO_H = 160, 43

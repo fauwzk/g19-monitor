@@ -13,6 +13,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFo
 
 from .lcd import W, H
 from .settings import PAGE_TITLES
+from . import smooth
+from .smooth import Draw
 
 # mode sombre à fort contraste : l'écran TFT du G19 écrase les tons proches
 BG = (4, 6, 9)
@@ -183,6 +185,8 @@ def apply_theme(c):
     name = theme_of(c.settings)
     set_theme(name)
     ANIMATE = bool(c.settings.get("animations", True))
+    # formes lissées, sauf pour le thème Pixel (ses escaliers sont voulus)
+    smooth.enabled = bool(c.settings.get("smooth_shapes", True)) and name != "pixel"
     _wall["on"] = bool(c.settings.get("wallpaper_bg"))
     _wall["dim"] = max(0, min(95, int(c.settings.get("wallpaper_dim", 60) or 0)))
     if name != "dynamic":
@@ -270,7 +274,7 @@ def postprocess(img):
             lut = [level(v) for v in range(256)]
             _g15_cache["lut"] = [c[0] for c in lut] + [c[1] for c in lut] + [c[2] for c in lut]
             grid = Image.new("L", (W, H), 0)
-            gd = ImageDraw.Draw(grid)
+            gd = Draw(grid)
             for y in range(1, H, 2):
                 gd.line((0, y, W, y), fill=70)
             for x in range(1, W, 2):
@@ -296,7 +300,7 @@ def postprocess(img):
             _g15_cache[key] = [c[0] for c in tint] + [c[1] for c in tint] + [c[2] for c in tint]
             if _theme == "terminal":
                 scan = Image.new("L", (W, H), 0)
-                sd = ImageDraw.Draw(scan)
+                sd = Draw(scan)
                 for y in range(1, H, 2):
                     sd.line((0, y, W, y), fill=55)     # lignes de balayage, discrètes
                 _g15_cache["scan"] = scan
@@ -387,6 +391,8 @@ class Ctx:
     home: object = None          # home.Home : appareils Home Assistant (page Maison)
     agenda_sel: int = 0          # page Agenda : événement choisi (OK ouvre sa réunion)
     home_sel: int = 0            # page Maison : appareil choisi (OK l'allume / l'éteint)
+    daily: object = None         # daily.DayLog : bilan du jour (PC, jeux, musique)
+    daily_offset: int = 0        # page Bilan : 0 aujourd'hui, -1 hier…
     dnd: object = None           # dnd.DoNotDisturb : « Ne pas déranger » de Windows
     fuel_scroll: int = 0
     gpu_view: str = "both"       # page GPU en jeu : FPS et temps d'image, ou l'un des deux (OK)
@@ -627,7 +633,7 @@ def dial(d, cx, cy, r, frac, color, value, unit, label):
     if img is not None:
         ring = _vgrad(2 * rb + 1, 2 * rb + 1, (150, 156, 166), (28, 30, 34))
         m = Image.new("L", ring.size, 0)
-        md = ImageDraw.Draw(m)
+        md = Draw(m)
         md.ellipse((0, 0, 2 * rb, 2 * rb), fill=255)
         md.ellipse((3, 3, 2 * rb - 3, 2 * rb - 3), fill=0)
         img.paste(ring, (cx - rb, cy - rb), m)
@@ -677,11 +683,11 @@ def _gloss(w, h, r, base):
             c = mix(base, bottom, (y - split) / max(1, h - split))
         col.putpixel((0, y), c)
     im = col.resize((w, h))
-    dd = ImageDraw.Draw(im)
+    dd = Draw(im)
     dd.rounded_rectangle((0, 0, w - 1, h - 1), r, outline=mix(base, (0, 0, 0), 0.6))
     dd.line((r, 1, w - 1 - r, 1), fill=mix(top, (255, 255, 255), 0.35))  # arête lumineuse
     mask = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), r, fill=255)
+    Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), r, fill=255)
     _gloss_cache[key] = (im, mask)
     return im, mask
 
@@ -708,9 +714,18 @@ def _see_through(d, box, alpha, draw):
     img.paste(Image.blend(before, img.crop(b), alpha), b[:2])
 
 
+def sym(box):
+    """Boîte qui finit sur une marge (W - 6, W - 4…) : Pillow compte la dernière colonne, elle
+    aurait 1 px de plus à droite qu'à gauche ; on la ramène pour des marges égales."""
+    x0, y0, x1, y1 = box
+    return (x0, y0, x1 - 1, y1) if x0 > 0 and any(abs(x1 - (W - m)) < 0.01
+                                                  for m in (4, 6, 8, 10)) else box
+
+
 def panel(d, box, r, outline=None, width=1, color=None):
     """Fond de carte : uni dans les thèmes sombre et clair, vernis dans le thème G19."""
     color = color or PANEL
+    box = sym(tuple(box))
     _see_through(d, box, WALL_PANEL_ALPHA, lambda: _panel(d, box, r, outline, width, color))
 
 
@@ -857,7 +872,7 @@ def _claude_star(size, color, step):
     k = 4
     n = size * k
     im = Image.new("RGBA", (n, n), (0, 0, 0, 0))
-    dd = ImageDraw.Draw(im)
+    dd = Draw(im)
     c = n / 2
     for ang, length in CLAUDE_RAYS:
         a = math.radians(ang + step)
@@ -1274,7 +1289,7 @@ def page_claude(d, sessions, t, scroll=0, usage=None, sel=0, git=None):
                font=font(9), fill=MUTED, anchor="rb")
     if len(sessions) > 1 and scroll <= sel < scroll + len(rows):
         cy = glide("claude_cursor", 30 + (sel - scroll) * 35, t)
-        d.rounded_rectangle((6, cy, W - 6, cy + 31), 6, outline=ACCENT, width=1)
+        d.rounded_rectangle(sym((6, cy, W - 6, cy + 31)), 6, outline=ACCENT, width=1)
 
 def page_cores(d, st, t, sensors=None):
     cores = st.cores or [0]
@@ -1477,6 +1492,40 @@ def fit_block(d, text, maxw, sizes, max_lines, bold=False):
             return lines, size
     size = sizes[-1]
     return wrap(d, text, font(size, bold), maxw, max_lines), size
+
+
+MARQUEE_PAUSE, MARQUEE_SPEED, MARQUEE_GAP, MARQUEE_FADE = 2.5, 26, 36, 10
+_marquee = {}
+
+
+def marquee(img, d, xy, text, fnt, maxw, fill, t, key=None, anchor="la"):
+    """Texte sur une ligne : tel quel s'il tient ; sinon il défile doucement en boucle (pause
+    au début de chaque tour), bords estompés, au lieu d'être coupé par « … »."""
+    text = " ".join(str(text or "").split())
+    tw = d.textlength(text, font=fnt)
+    if tw <= maxw or not ANIMATE or t is None:
+        d.text(xy, fit(d, text, fnt, maxw), font=fnt, fill=fill, anchor=anchor)
+        return
+    k = (key, text)
+    start = _marquee.setdefault(k, t)
+    if len(_marquee) > 200:
+        _marquee.clear()
+    lap = tw + MARQUEE_GAP
+    phase = (t - start) % (MARQUEE_PAUSE + lap / MARQUEE_SPEED)
+    off = max(0.0, phase - MARQUEE_PAUSE) * MARQUEE_SPEED
+    x, y = xy
+    top, bottom = d.textbbox((0, y), text, font=fnt, anchor=anchor)[1::2]
+    h = int(bottom - top) + 4
+    mask = Image.new("L", (int(maxw), h), 0)
+    md = ImageDraw.Draw(mask)
+    for dx in (-off, -off + lap):
+        md.text((dx, y - top + 2), text, font=fnt, fill=255, anchor=anchor)
+    # bords estompés : à gauche dès que le texte a bougé, à droite tant qu'il en reste
+    fade = Image.linear_gradient("L").rotate(90, expand=True).resize((MARQUEE_FADE, h))
+    if off > 0:
+        mask.paste(0, (0, 0), ImageChops.invert(fade))
+    mask.paste(0, (int(maxw) - MARQUEE_FADE, 0), fade)
+    img.paste(fill if not isinstance(fill, list) else tuple(fill), (int(x), int(top) - 2), mask)
 
 
 def wrap(d, text, fnt, maxw, lines):
@@ -1825,7 +1874,7 @@ def page_agenda(img, d, c, t):
     pos = next(i for i, r in enumerate(rows) if r == ("ev", sel))
     scroll = max(0, min(pos - 1, len(rows) - visible))
     ty = top + (pos - scroll) * AGENDA_ROW
-    cur, settled = glide_cursor("agenda_cursor", (4, ty + 1, W - 4, ty + AGENDA_ROW - 1), t)
+    cur, settled = glide_cursor("agenda_cursor", (6, ty + 1, W - 6, ty + AGENDA_ROW - 1), t)
 
     def draw_row(layer, ld, idx, y):
         kind, val = rows[idx]
@@ -1837,7 +1886,7 @@ def page_agenda(img, d, c, t):
             return
         e = events[val]
         if val == sel and settled:
-            panel(ld, (4, y + 1, W - 4, y + AGENDA_ROW - 1), 5,
+            panel(ld, (6, y + 1, W - 6, y + AGENDA_ROW - 1), 5,
                   outline=None if _theme == "g19" else GOOGLE_BLUE,
                   color=dim(GOOGLE_BLUE, 0.3) if _theme == "g19" else PANEL)
         when = "journée" if e["all_day"] else time.strftime("%H:%M", time.localtime(e["start"]))
@@ -2341,7 +2390,7 @@ def page_audio(d, c, t):
     y = 28
     if profs:
         row = {"kind": "profile"}
-        highlight((4, y - 1, W - 4, y + 19), row)
+        highlight((6, y - 1, W - 6, y + 19), row)
         active = vol.active_profile(profs)
         x0, x1 = 10, W - 10
         if is_sel(row):
@@ -2542,7 +2591,7 @@ def _cover_2010(art, size):
     cov = art.resize((size, size), Image.LANCZOS).convert("RGBA")
     alpha = cov.getchannel("A")
     shine = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(shine).polygon([(0, 0), (size, 0), (size, size * 0.32), (0, size * 0.5)],
+    Draw(shine).polygon([(0, 0), (size, 0), (size, size * 0.32), (0, size * 0.5)],
                                   fill=46)
     gloss = Image.new("RGBA", (size, size), (255, 255, 255, 0))
     gloss.putalpha(ImageChops.multiply(shine, alpha))
@@ -2557,7 +2606,7 @@ def _cover_2010(art, size):
     fade = Image.linear_gradient("L").resize((size, rh)).point(
         lambda v: max(0, 130 - v * 130 // 255))
     refl.putalpha(ImageChops.multiply(ra, fade))
-    ImageDraw.Draw(refl).line((6, 0, size - 7, 0), fill=(255, 255, 255, 70))
+    Draw(refl).line((6, 0, size - 7, 0), fill=(255, 255, 255, 70))
     _cover_cache[key] = (art, cov, refl)
     return cov, refl
 
@@ -2569,7 +2618,7 @@ def chrome_button(d, cx, cy, r, accent=None):
     if img is not None:
         g = _vgrad(2 * r + 1, 2 * r + 1, top, bottom)
         m = Image.new("L", g.size, 0)
-        ImageDraw.Draw(m).ellipse((0, 0, 2 * r, 2 * r), fill=255)
+        Draw(m).ellipse((0, 0, 2 * r, 2 * r), fill=255)
         img.paste(g, (cx - r, cy - r), m)
     d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=(0, 0, 0))
     d.chord((cx - r + 2, cy - r + 1, cx + r - 2, cy + 2), 180, 360,
@@ -2694,6 +2743,52 @@ def empty_state(d, glyph, title, subtitle="", color=None, cy=118):
                fill=MUTED, anchor="mm")
 
 
+KEY_FLASH = 0.3          # s : une pastille de touche reste allumée après l'appui
+# libellés de pastille que chaque touche du G19 allume
+KEY_LABELS = {"ok": ("OK",), "cancel": ("Annuler", "✕"), "menu": ("Menu",),
+              "up": ("▲▼", "▲"), "down": ("▲▼", "▼"), "left": ("◄►", "◄"),
+              "right": ("◄►", "►")}
+_key_press = {"button": None, "at": 0.0, "t": None}
+_cursor_seen = {}        # dernière case choisie (glide_cursor) : l'onde de OK part de là
+
+
+def note_key(button, t):
+    """Touche du G19 enfoncée (boucle principale) : sa pastille s'allume un instant."""
+    _key_press.update(button=button, at=t)
+
+
+def key_glow(label, t=None):
+    """0…1 : éclat de la pastille `label` (1 à l'appui, puis s'éteint en KEY_FLASH s)."""
+    t = time.time() if t is None else t
+    b = _key_press["button"]
+    if not b or label not in KEY_LABELS.get(b, ()):
+        return 0.0
+    age = t - _key_press["at"]
+    return max(0.0, 1 - age / KEY_FLASH) ** 2 if age >= 0 else 0.0
+
+
+def key_chip(d, box, key, color, r):
+    """Pastille d'une touche : contour, et pleine un instant quand on vient de l'appuyer."""
+    glow = key_glow(key)
+    if glow > 0:
+        d.rounded_rectangle(box, r, fill=mix(PANEL, color, 0.25 + 0.6 * glow),
+                            outline=mix(dim(color, 0.85), TEXT, glow), width=1)
+    else:
+        d.rounded_rectangle(box, r, outline=dim(color, 0.85), width=1)
+
+
+def ok_ripple(d, t):
+    """OK dans une liste : une onde s'élargit autour de la ligne choisie."""
+    glow = key_glow("OK", t)
+    seen = _cursor_seen.get("box")
+    if glow <= 0 or not seen or seen[1] != t:
+        return
+    x0, y0, x1, y1 = sym(seen[0])
+    grow = 4 * (1 - glow)
+    d.rounded_rectangle((x0 - grow, y0 - grow, x1 + grow, y1 + grow), 7 + grow,
+                        outline=mix(BG, mix(ACCENT, TEXT, 0.4), glow), width=2)
+
+
 def key_hints(d, y, items, align="left", x=None, color=None):
     """Indications de touches, partout pareilles : chaque touche dans une petite pastille
     (comme une touche du G19), suivie de son action. items : [(touche, action)].
@@ -2714,7 +2809,7 @@ def key_hints(d, y, items, align="left", x=None, color=None):
         x0 = x if x is not None else 10
     cx = x0
     for key, label, kw, lw in parts:
-        d.rounded_rectangle((cx, y - 6, cx + kw, y + 6), 4, outline=dim(color, 0.85), width=1)
+        key_chip(d, (cx, y - 6, cx + kw, y + 6), key, color, 4)
         d.text((cx + kw / 2, y), key, font=fk, fill=TEXT, anchor="mm")
         cx += kw
         if lw:
@@ -2728,12 +2823,13 @@ def glide_cursor(key, box, t, tau=0.06):
     """Curseur de choix qui glisse vers `box` (x0, y0, x1, y1) : renvoie (case glissée,
     arrivé ?). Arrivé, la ligne choisie se colore elle-même ; en route, un cadre glisse."""
     g = tuple(glide((key, k), v, t, tau) for k, v in enumerate(box))
+    _cursor_seen["box"] = (box, t)
     return g, max(abs(a - b) for a, b in zip(g, box)) < 0.5
 
 
 def draw_glide_cursor(d, g, color, top=0, bottom=H, radius=6):
     """Cadre du curseur en route, coupé à la zone de la liste."""
-    x0, y0, x1, y1 = g
+    x0, y0, x1, y1 = sym(g)
     y0, y1 = max(y0, top), min(y1, bottom - 1)
     if y1 - y0 > 4:
         d.rounded_rectangle((x0, y0, x1, y1), radius, outline=color, width=2)
@@ -2747,7 +2843,7 @@ def smooth_rows(img, key, scroll, count, top, bottom, row_h, draw_row, t):
     first = int(offset // row_h)
     frac = offset - first * row_h
     layer = img.crop((0, top, W, bottom))
-    ld = ImageDraw.Draw(layer)
+    ld = Draw(layer)
     visible = (bottom - top) // row_h + 2
     for idx in range(max(0, first), min(count, first + visible)):
         draw_row(layer, ld, idx, (idx - first) * row_h - frac)
@@ -2777,10 +2873,10 @@ def faded(img, alpha, draw):
     if alpha <= 0.01:
         return
     if alpha >= 0.99:
-        draw(ImageDraw.Draw(img))
+        draw(Draw(img))
         return
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw(ImageDraw.Draw(layer))
+    draw(Draw(layer))
     a = layer.getchannel("A").point(lambda v: int(v * alpha))
     layer.putalpha(a)
     img.paste(layer, (0, 0), layer)
@@ -2926,14 +3022,22 @@ def page_media(img, d, m, t, vol=None, lyrics_hint=False):
     accent = media_accent(m)
     d.text((x, 34), app, font=font(10, True), fill=accent if m.playing else MUTED)
     y = 50
-    for line in wrap(d, m.title, font(15, True), maxw, 2):
-        d.text((x, y), line, font=font(15, True), fill=TEXT)
-        y += 20
+    lines = wrap(d, m.title, font(15, True), maxw, 2)
+    if len(lines) == 2 and lines[1].endswith("…"):
+        # trop long pour deux lignes : la 2e défile avec la suite du titre
+        rest = " ".join(m.title.split())[len(lines[0]):].strip()
+        d.text((x, y), lines[0], font=font(15, True), fill=TEXT)
+        marquee(img, d, (x, y + 20), rest, font(15, True), maxw, TEXT, t, "media_title")
+        y += 40
+    else:
+        for line in lines:
+            d.text((x, y), line, font=font(15, True), fill=TEXT)
+            y += 20
     if m.artist:
-        d.text((x, y + 2), fit(d, m.artist, font(12), maxw), font=font(12), fill=TEXT)
+        marquee(img, d, (x, y + 2), m.artist, font(12), maxw, TEXT, t, "media_artist")
         y += 18
     if m.album:
-        d.text((x, y + 2), fit(d, m.album, font(11), maxw), font=font(11), fill=MUTED)
+        marquee(img, d, (x, y + 2), m.album, font(11), maxw, MUTED, t, "media_album")
     volume_row(d, vol, x, 140, maxw, accent)
 
     # progression
@@ -3127,9 +3231,31 @@ def avatar(img, d, cache, url, cx, cy, size, name, ring=None, color=None):
                anchor="mm")
 
 
-def toast(img, d, n, cache):
+_shadows = {}
+
+
+def drop_shadow(img, box, r, blur=4, dy=3):
+    """Ombre douce sous une fenêtre posée par-dessus la page (bandeau, volume) : un rectangle
+    arrondi flou, un peu plus bas ; plus marquée sur fond sombre que sur fond clair."""
+    x0, y0, x1, y1 = (int(round(v)) for v in box)
+    strength = 0.55 if sum(BG[:3]) < 384 else 0.28
+    key = (x1 - x0, y1 - y0, r, blur, strength)
+    mask = _shadows.get(key)
+    if mask is None:
+        pad = blur * 3
+        mask = Image.new("L", (x1 - x0 + 2 * pad, y1 - y0 + 2 * pad), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((pad, pad, pad + x1 - x0, pad + y1 - y0), r,
+                                               fill=255)
+        mask = mask.filter(ImageFilter.GaussianBlur(blur)).point(lambda v: int(v * strength))
+        _shadows[key] = mask
+    pad = (mask.width - (x1 - x0)) // 2
+    img.paste((0, 0, 0), (x0 - pad, y0 - pad + dy), mask)
+
+
+def toast(img, d, n, cache, t=None):
     """Bandeau de notification posé par-dessus la page. n : {source, title, body, icon, color}."""
     color = n["color"]
+    drop_shadow(img, (6, 196, W - 6, 236), 8)
     panel(d, (6, 196, W - 6, 236), 8, color=dim(color, 0.22))
     d.rounded_rectangle((6, 196, 10, 236), 2, fill=color)
     if n["source"] == "Alerte":
@@ -3141,11 +3267,11 @@ def toast(img, d, n, cache):
     src = fit(d, n["source"], font(9, True), 120)
     sw = d.textlength(src, font=font(9, True))
     d.text((W - 14, 206), src, font=font(9, True), fill=color, anchor="rm")
-    d.text((50, 206), fit(d, n["title"], font(12, True), W - 76 - sw), font=font(12, True),
-           fill=TEXT, anchor="lm")
+    marquee(img, d, (50, 206), n["title"], font(12, True), W - 76 - sw, TEXT, t,
+            ("toast_title", n.get("at")), "lm")
     hw = toast_keys(d, n, color) if "open" in n else 0
-    d.text((50, 225), fit(d, n["body"], font(11), W - 66 - hw), font=font(11), fill=TEXT,
-           anchor="lm")
+    marquee(img, d, (50, 225), n["body"], font(11), W - 66 - hw, TEXT, t,
+            ("toast_body", n.get("at")), "lm")
 
 
 def toast_keys(d, n, color):
@@ -3160,7 +3286,7 @@ def toast_keys(d, n, color):
             d.text((x, 226), label, font=f, fill=dim(TEXT, 0.75), anchor="lm")
             x -= 3
         kw = d.textlength(key, font=fb) + 6
-        d.rounded_rectangle((x - kw, 220, x, 232), 3, outline=dim(color, 0.9), width=1)
+        key_chip(d, (x - kw, 220, x, 232), key, color, 3)
         d.text((x - kw / 2, 226), key, font=fb, fill=TEXT, anchor="mm")
         x -= kw + 6
     return W - 14 - x + 4
@@ -3181,7 +3307,7 @@ def slide_toast(img, n, cache, t, seconds):
     if offset >= H - 196:
         return
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    toast(layer, ImageDraw.Draw(layer), n, cache)
+    toast(layer, Draw(layer), n, cache, t)
     img.paste(layer, (0, offset), layer)
 
 
@@ -3295,6 +3421,10 @@ def toast_candidates(c, page, t):
     if pe:
         cands.append((pe[2], {"page": pe[3] if len(pe) > 3 else None, "source": "Écrans", "title": pe[0], "body": pe[1], "icon": None,
                               "color": ACCENT}))
+    dy = c.daily.event if c.daily and c.settings.get("day_recap_hour", 21) else None
+    if dy:
+        cands.append((dy[2], {"page": "daily", "source": "Bilan", "title": dy[0],
+                              "body": dy[1], "icon": None, "color": ACCENT}))
     sy = c.sysw.event if c.sysw else None
     if sy:
         cands.append((sy[2], {"page": "system", "source": "Système", "title": sy[0], "body": sy[1], "icon": None,
@@ -3491,7 +3621,7 @@ def page_discord_panel(img, d, c, t):
     bottom = top + visible * DISCORD_ROW          # pas de ligne coupée en bas
     scroll = max(0, min(cur - visible // 2, len(lines) - visible))
     ty = top + (cur - scroll) * DISCORD_ROW
-    gcur, settled = glide_cursor("discord_cursor", (4, ty + 1, W - 4, ty + DISCORD_ROW - 1), t)
+    gcur, settled = glide_cursor("discord_cursor", (6, ty + 1, W - 6, ty + DISCORD_ROW - 1), t)
     members = v["members"] if v else {}
     notes = list(dc.notifications)
 
@@ -3520,7 +3650,7 @@ def page_discord_panel(img, d, c, t):
         row = lines[idx]
         kind, on = row["kind"], idx == cur
         if on and settled:
-            panel(ld, (4, y + 1, W - 4, y + DISCORD_ROW - 1), 5,
+            panel(ld, (6, y + 1, W - 6, y + DISCORD_ROW - 1), 5,
                   outline=None if _theme == "g19" else DISCORD,
                   color=dim(DISCORD, 0.35) if _theme == "g19" else PANEL)
         cy = y + DISCORD_ROW // 2
@@ -3583,13 +3713,105 @@ DATA_READY = {
 }
 
 
-def render(page, c, t=None, post=True):
+ICON_MUSIC = "\uE8D6"
+
+
+def daily_label(t, offset):
+    """« aujourd'hui », « hier », sinon « lun. 31 oct. »."""
+    if offset == 0:
+        return "aujourd'hui"
+    if offset == -1:
+        return "hier"
+    lt = time.localtime(t + offset * 86400)
+    return f"{JOURS[lt.tm_wday][:3]}. {lt.tm_mday} {MOIS[lt.tm_mon - 1]}"
+
+
+def page_daily(img, d, c, t):
+    """Bilan du jour : PC, jeu, musique ; l'activité heure par heure ; les jeux et artistes."""
+    if not c.daily:
+        empty_state(d, ICON_HISTORY, "Bilan du jour", "pas encore de données")
+        return
+    off = c.daily_offset
+    day, prev = c.daily.day(t, off), c.daily.day(t, off - 1)
+    game_col, music_col = WARN, OK
+
+    # trois tuiles : PC, jeu, musique, avec la veille pour comparer
+    tiles = [(ICON_SCREEN, "PC", day["pc"], prev["pc"], ACCENT),
+             (ICON_GAME, "JEU", day["game"], prev["game"], game_col),
+             (ICON_MUSIC, "MUSIQUE", day["music"], prev["music"], music_col)]
+    for k, (glyph, label, val, before, col) in enumerate(tiles):
+        x0 = 6 + k * 104
+        panel(d, (x0, 28, x0 + 100, 80), 6)
+        icon(d, glyph, x0 + 12, 40, 11, col)
+        d.text((x0 + 22, 40), label, font=font(9, True), fill=col, anchor="lm")
+        d.text((x0 + 8, 58), fmt_duration(val) if val >= 60 else "—", font=font(16, True),
+               fill=TEXT if val >= 60 else MUTED, anchor="lm")
+        if label == "MUSIQUE" and day["tracks"]:
+            sub = f"{day['tracks']} morceau{'x' if day['tracks'] > 1 else ''}"
+        elif before >= 60:
+            sub = f"{daily_label(t, off - 1)} {fmt_duration(before)}"
+        else:
+            sub = ""
+        d.text((x0 + 8, 72), fit(d, sub, font(9), 88), font=font(9), fill=MUTED, anchor="lm")
+
+    # heure par heure : temps sur le PC (accent), dont en jeu (orange)
+    panel(d, (6, 86, W - 6, 160), 6)
+    d.text((14, 95), "HEURE PAR HEURE", font=font(8, True), fill=MUTED, anchor="lm")
+    key_hints(d, 95, [("▲▼", "autre jour")], "right")
+    base, step, top_h = 146, 12, 40
+    x0 = 16
+    now_h = time.localtime(t).tm_hour if off == 0 else -1
+    for h in range(24):
+        x = x0 + h * step
+        pc = min(1.0, day["hours_pc"][h] / 3600)
+        game = min(pc, day["hours_game"][h] / 3600)
+        d.rounded_rectangle((x, base - top_h, x + step - 3, base), 2, fill=dim(TRACK, 0.6))
+        if pc > 0.01:
+            d.rounded_rectangle((x, base - max(2, top_h * pc), x + step - 3, base), 2,
+                                fill=ACCENT)
+        if game > 0.01:
+            d.rounded_rectangle((x, base - max(2, top_h * game), x + step - 3, base), 2,
+                                fill=game_col)
+        if day["hours_music"][h] >= 300:          # 5 min de musique : un point vert
+            d.ellipse((x + step / 2 - 3, base + 3, x + step / 2, base + 6), fill=music_col)
+        if h % 6 == 0:
+            d.text((x, 154), f"{h}h", font=font(8), fill=MUTED, anchor="lm")
+        if h == now_h:
+            d.line((x - 1, base - top_h - 2, x + step - 2, base - top_h - 2), fill=TEXT, width=1)
+    if day["first"]:
+        span = (f"{time.strftime('%H:%M', time.localtime(day['first']))} – "
+                f"{time.strftime('%H:%M', time.localtime(day['last']))}")
+        d.text((W - 14, 154), span, font=font(8), fill=MUTED, anchor="rm")
+
+    # jeux du jour et artistes les plus écoutés
+    for k, (title, items, col, unit) in enumerate((
+            ("JEUX", sorted(day["games"].items(), key=lambda kv: -kv[1]), game_col, "time"),
+            ("ARTISTES", sorted(day["artists"].items(), key=lambda kv: -kv[1]), music_col,
+             "count"))):
+        x0 = 6 + k * 156
+        panel(d, (x0, 166, x0 + 152, H - 6), 6)
+        d.text((x0 + 8, 175), title, font=font(8, True), fill=col, anchor="lm")
+        if not items:
+            d.text((x0 + 8, 196), "aucun jeu" if unit == "time" else "pas de musique",
+                   font=font(10), fill=MUTED, anchor="lm")
+            continue
+        for i, (name, val) in enumerate(items[:3]):
+            y = 189 + i * 15
+            val_s = fmt_duration(val) if unit == "time" else f"× {val}"
+            vw = d.textlength(val_s, font=font(9, True))
+            d.text((x0 + 144, y), val_s, font=font(9, True), fill=TEXT, anchor="rm")
+            d.text((x0 + 8, y), fit(d, name, font(10), 130 - vw), font=font(10),
+                   fill=dim(TEXT, 0.85), anchor="lm")
+
+
+def render(page, c, t=None, post=True, toast=True):
     """Image 320×240 de la page `page` (id de settings.PAGE_TITLES) ; `post` False : sans la
-    passe finale du thème (miniatures du coverflow, filtrées avec le reste)."""
+    passe finale du thème (miniatures du coverflow, filtrées avec le reste) ; `toast` False :
+    sans le bandeau (posé après la transition, par overlay_toast, pour qu'il ne glisse pas)."""
     apply_theme(c)
     t = t or time.time()
     img = canvas()
-    d = ImageDraw.Draw(img)
+    d = Draw(img)
     pages = c.pages or c.settings["pages"]
     # données qui arrivent d'Internet (météo, Steam, Carburant) : elles apparaissent en fondu
     ready = DATA_READY.get(page)
@@ -3617,6 +3839,8 @@ def render(page, c, t=None, post=True):
         page_agenda(img, d, c, t)
     elif page == "home":
         page_home(img, d, c, t)
+    elif page == "daily":
+        page_daily(img, d, c, t)
     elif page == "toasts":
         page_toasts(img, d, c, t)
     elif page == "screen":
@@ -3656,6 +3880,8 @@ def render(page, c, t=None, post=True):
         title = f"{JOURS[lt.tm_wday].capitalize()} {lt.tm_mday} {MOIS[lt.tm_mon - 1]}"
     elif page == "media" and c.show_lyrics and has_lyrics(c):
         title = "Paroles"
+    elif page == "daily" and c.daily_offset:
+        title = f"Bilan · {daily_label(t, c.daily_offset)}"
     header(d, pages.index(page) if page in pages else 0, len(pages),
            c.sessions if c.claude_open else None, t, c.discord, c.alerts, title,
            c.settings.get("claude_strip_seconds", 10), c.streaming,
@@ -3665,11 +3891,32 @@ def render(page, c, t=None, post=True):
     if c.alerts and c.alerts.active and (t * 2) % 2 < 1.4:
         d.rectangle((0, 0, W - 1, H - 1), outline=HOT, width=2)  # cadre rouge clignotant
 
-    n = current_toast(c, page, t)
+    ok_ripple(d, t)
+    n = current_toast(c, page, t) if toast else None
     if n:
         slide_toast(img, n, c.discord.avatars if c.discord else None, t,
                     c.settings["toast_seconds"])
     return postprocess(img) if post else img
+
+
+def overlay_toast(img, c, page, t):
+    """Le bandeau par-dessus une image déjà finie (pendant le glissement entre deux pages, il
+    reste en place). Il passe par la même passe finale du thème que le reste de l'écran."""
+    apply_theme(c)
+    n = current_toast(c, page, t)
+    if not n:
+        return img
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    slide_toast(layer, n, c.discord.avatars if c.discord else None, t,
+                c.settings["toast_seconds"])
+    mask = layer.getchannel("A")
+    if not mask.getbbox():
+        return img
+    flat = Image.new("RGB", (W, H), BG)
+    flat.paste(layer, (0, 0), layer)
+    out = img.convert("RGB").copy()
+    out.paste(postprocess(flat).convert("RGB"), (0, 0), mask)
+    return out
 
 
 # --- Fenêtre de volume ------------------------------------------------------------------------
@@ -3720,8 +3967,9 @@ def volume_popup(img, c, t):
     else:
         alpha, rise = 1.0, 0
     out = img.copy()
-    d = ImageDraw.Draw(out)
+    d = Draw(out)
     x0, x1, y0 = 56, W - 56, 170 + rise
+    drop_shadow(out, (x0, y0, x1, y0 + 50), 10, blur=5, dy=4)
     if kind != "volume":
         mic_popup(d, c, kind, x0, x1, y0)
         return out if alpha >= 0.99 else Image.blend(img, out, alpha)
@@ -3909,7 +4157,7 @@ def render_menu(menu, c, t=None):
     apply_theme(c)
     t = t or time.time()
     img = canvas()
-    d = ImageDraw.Draw(img)
+    d = Draw(img)
     cfg = c.settings
     title_bar(d)
     d.text((8, 12), "Paramètres", font=font(14, True), fill=HEAD_TEXT, anchor="lm")
@@ -4174,7 +4422,7 @@ def page_vpn(d, v, t):
                    anchor="mm")
 
     # IP publique + autres VPN
-    d.line((6, 194, W - 6, 194), fill=TRACK)
+    d.line((6, 194, W - 7, 194), fill=TRACK)
     pub = v.public
     if pub:
         d.text((10, 206), "IP publique", font=font(9, True), fill=MUTED, anchor="lm")
@@ -4251,7 +4499,7 @@ def page_lyrics(img, d, m, lyrics, t, animate=True):
             move = 1 - (1 - min(1.0, max(0.0, k))) ** 3
         # tout le bloc est dessiné sur un calque, posé plus bas au début d'une ligne
         layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        d = ImageDraw.Draw(layer)
+        d = Draw(layer)
         # ligne en cours, mise en avant (taille réduite et jusqu'à 3 lignes si elle est longue,
         # jamais coupée) ; une ou deux lignes avant, estompées, et jusqu'à trois après
         lines_cur, size = fit_block(d, cur or "♪", W - 20, (17, 15, 13, 12), 3, True)
@@ -4302,7 +4550,7 @@ def render_fans(index, c, t=None):
     apply_theme(c)
     t = t or time.time()
     img = canvas()
-    d = ImageDraw.Draw(img)
+    d = Draw(img)
     fc = c.fans
     s = c.gpu.s if c.gpu else {}
 
@@ -4339,7 +4587,7 @@ def render_fans(index, c, t=None):
             tag, color = f"{f['pct']:.0f}%", ACCENT
         else:
             tag, color = "auto", MUTED
-        d.text((W - 8, y), tag, font=font(9, True), fill=color, anchor="rm")
+        d.text((W - 10, y), tag, font=font(9, True), fill=color, anchor="rm")
     if hidden:
         d.text((10, 40 + min(len(fans), 7) * 22), f"{hidden} prise(s) sans ventilateur masquée(s)",
                font=font(8), fill=dim(MUTED, 0.6), anchor="lm")
@@ -4347,7 +4595,7 @@ def render_fans(index, c, t=None):
     # choix du profil
     applied = fc.applied if fc else "auto"
     wanted = c.settings.get("fan_profile", "auto")
-    cw, gap, x0, y0 = 58, 4, 7, 184
+    cw, gap, x0, y0 = 59, 3, 6, 184          # 5 profils pile entre les marges (6 … 313)
     for i, (pid, label) in enumerate(FAN_CHIPS):
         x = x0 + i * (cw + gap)
         selected, active = i == index, pid == applied
@@ -4396,10 +4644,10 @@ def _ease(x):
 
 def _gradient_text(img, xy, text, fnt, top, bottom):
     """Texte rempli d'un dégradé vertical (centré sur xy)."""
-    box = ImageDraw.Draw(img).textbbox(xy, text, font=fnt, anchor="mm")
+    box = Draw(img).textbbox(xy, text, font=fnt, anchor="mm")
     w, h = box[2] - box[0] + 2, box[3] - box[1] + 2
     mask = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(mask).text((w / 2, h / 2), text, font=fnt, fill=255, anchor="mm")
+    Draw(mask).text((w / 2, h / 2), text, font=fnt, fill=255, anchor="mm")
     img.paste(_vgrad(w, h, top, bottom), (box[0], box[1]), mask)
 
 
@@ -4420,7 +4668,7 @@ def _keycap(w, h, accent):
         return _splash_bg[key]
     k = 3
     img = Image.new("RGBA", (w * k, h * k), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
+    d = Draw(img)
     light = _light()
     side_top, side_bot = ((214, 220, 228), (170, 178, 190)) if light else ((46, 50, 58), (14, 16, 20))
     face_top, face_bot = ((255, 255, 255), (228, 233, 240)) if light else ((70, 76, 86), (28, 31, 37))
@@ -4430,22 +4678,22 @@ def _keycap(w, h, accent):
         c = mix(side_top, side_bot, y / (h * k))
         d.line((0, y, w * k, y), fill=c)
     mask = Image.new("L", (w * k, h * k), 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, w * k - 1, h * k - 1), r, fill=255)
+    Draw(mask).rounded_rectangle((0, 0, w * k - 1, h * k - 1), r, fill=255)
     img.putalpha(mask)
     inset = 7 * k
     face = Image.new("RGB", (w * k - 2 * inset, h * k - 3 * inset))
-    fd = ImageDraw.Draw(face)
+    fd = Draw(face)
     for y in range(face.height):
         fd.line((0, y, face.width, y), fill=mix(face_top, face_bot, y / face.height))
     fmask = Image.new("L", face.size, 0)
-    ImageDraw.Draw(fmask).rounded_rectangle((0, 0, face.width - 1, face.height - 1), r - inset,
+    Draw(fmask).rounded_rectangle((0, 0, face.width - 1, face.height - 1), r - inset,
                                             fill=255)
     img.paste(face, (inset, inset // 2), fmask)
     gloss = Image.new("L", face.size, 0)
-    ImageDraw.Draw(gloss).rounded_rectangle((0, 0, face.width - 1, face.height // 2), r - inset,
+    Draw(gloss).rounded_rectangle((0, 0, face.width - 1, face.height // 2), r - inset,
                                             fill=46 if not light else 0)
     img.paste((255, 255, 255), (inset, inset // 2), ImageChops.multiply(gloss, fmask))
-    ImageDraw.Draw(img).rounded_rectangle((1, 1, w * k - 2, h * k - 2), r,
+    Draw(img).rounded_rectangle((1, 1, w * k - 2, h * k - 2), r,
                                           outline=accent + (255,), width=k * 2)
     out = img.resize((w, h), Image.LANCZOS)
     _splash_bg[key] = out
@@ -4460,7 +4708,7 @@ def render_splash(progress, step, t, theme="dark", age=None, fade=1.0, version="
     set_theme(theme)
     a = 10.0 if age is None else age
     img = canvas()
-    d = ImageDraw.Draw(img)
+    d = Draw(img)
     cx = W // 2
     light = _light()
 
@@ -4478,7 +4726,7 @@ def render_splash(progress, step, t, theme="dark", age=None, fade=1.0, version="
     press = 3 if 0.6 < a < 0.78 else 0
     ky = int(46 + drop + press)
     shadow = Image.new("L", (kw + 60, 60), 0)       # marge : le flou ne bute pas sur les bords
-    ImageDraw.Draw(shadow).ellipse((20, 18, kw + 39, 41), fill=90 if not light else 50)
+    Draw(shadow).ellipse((20, 18, kw + 39, 41), fill=90 if not light else 50)
     shadow = shadow.filter(ImageFilter.GaussianBlur(7))
     img.paste((0, 0, 0), (cx - kw // 2 - 30, 46 + kh - 28), shadow)
     cap = _keycap(kw, kh, ACCENT)
@@ -4549,7 +4797,7 @@ def render_recap(c, rec, t, shown_at):
     bg = games.image(rec, "bg") if games else None
     if bg:
         img.paste(backdrop(bg), (0, 0))
-    d = ImageDraw.Draw(img)
+    d = Draw(img)
     title_bar(d)
     d.text((8, 12), "Fin de partie", font=font(14, True), fill=HEAD_TEXT, anchor="lm")
     d.text((W - 8, 12), "une touche pour fermer", font=font(9), fill=HEAD_MUTED, anchor="rm")
@@ -4630,11 +4878,27 @@ def fmt_away(sec):
     return f"{sec // 3600} h {sec % 3600 // 60:02d}" if sec >= 3600 else f"{max(1, sec // 60)} min"
 
 
+def idle_daily(d, day, cy):
+    """Bilan du jour en une ligne : PC, jeu, musique, centrés."""
+    items = [(ICON_SCREEN, fmt_duration(day["pc"]), ACCENT)]
+    if day["game"] >= 60:
+        items.append((ICON_GAME, fmt_duration(day["game"]), WARN))
+    if day["tracks"]:
+        items.append((ICON_MUSIC, str(day["tracks"]), OK))
+    f = font(15, True)
+    widths = [22 + d.textlength(v, font=f) for _, v, _ in items]
+    x = W // 2 - (sum(widths) + 16 * (len(items) - 1)) / 2
+    for (glyph, val, col), w in zip(items, widths):
+        icon(d, glyph, x + 8, cy, 14, col)
+        d.text((x + 20, cy), val, font=f, fill=TEXT, anchor="lm")
+        x += w + 16
+
+
 def render_idle(c, t):
     """PC verrouillé ou inactif : grande horloge, météo, et ce qui est arrivé entre-temps."""
     apply_theme(c)
     img = canvas()
-    d = ImageDraw.Draw(img)
+    d = Draw(img)
     away = c.away
     lt = time.localtime(t)
     d.text((W // 2, 74), time.strftime("%H:%M", lt), font=font(72, True), fill=TEXT, anchor="mm")
@@ -4645,7 +4909,10 @@ def render_idle(c, t):
     d.text((W // 2, 134), date, font=font(15), fill=MUTED, anchor="mm")
 
     cur = c.weather.current() if c.weather else None
-    if cur:
+    day = c.daily.day(t) if c.daily else None
+    if day and day["pc"] >= 60 and (not cur or int(t / 8) % 2):
+        idle_daily(d, day, 162)       # en alternance avec la météo : le bilan du jour
+    elif cur:
         from .weather import describe
         temp = f"{cur['temperature_2m']:.0f}°"
         label = describe(cur["weather_code"])[0]
@@ -4711,7 +4978,7 @@ def render_away(c, summary, t):
 
     apply_theme(c)
     img = canvas()
-    d = ImageDraw.Draw(img)
+    d = Draw(img)
     items, since, until, shown_at = summary
     title_bar(d)
     d.text((8, 12), f"Pendant ton absence · {fmt_away(until - since)}", font=font(13, True),

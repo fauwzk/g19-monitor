@@ -344,6 +344,22 @@ def demo_extras(c, t):
             ("Bureau", "light", "on", 128), ("Chambre", "light", "unavailable", None),
             ("Prise imprimante 3D", "switch", "on", None), ("Ventilateur", "fan", "off", None),
             ("Scène soirée", "scene", "scening", None), ("Arrosage", "script", "off", None)))])
+    # bilan du jour : une journée type (matin au bureau, musique, partie le soir)
+    from g19 import daily
+    today, yesterday = daily.empty_day(), daily.empty_day()
+    for h, pc, game, music in ((9, 50, 0, 40), (10, 58, 0, 55), (11, 45, 0, 30), (14, 40, 0, 0),
+                               (15, 55, 0, 20), (16, 30, 0, 0), (18, 60, 35, 0),
+                               (19, 60, 60, 10), (20, 42, 25, 0)):
+        today["hours_pc"][h], today["hours_game"][h] = pc * 60, game * 60
+        today["hours_music"][h] = music * 60
+    today.update(pc=sum(today["hours_pc"]), game=sum(today["hours_game"]),
+                 music=sum(today["hours_music"]), tracks=48, first=t - 12 * 3600, last=t,
+                 games={"Starfield Tactics": 4800, "Rally Horizon": 1920},
+                 artists={"Nova Skyline": 19, "Les Satellites": 11, "Mira Kade": 7})
+    yesterday.update(pc=5 * 3600 + 120, game=3000, music=1800, tracks=21)
+    c.daily = daily.DayLog.__new__(daily.DayLog)
+    c.daily.event, c.daily.days = None, {daily.day_key(t): today,
+                                         daily.day_key(t - 86400): yesterday}
 
 
 def fake_games(c, t):
@@ -421,6 +437,7 @@ def screens(c, t, recs, pages):
     page("Carburant", "fuel")
     page("Agenda", "agenda")
     page("Maison (Home Assistant)", "home")
+    page("Bilan du jour", "daily")
     page("Historique des bandeaux", "toasts")
     page("Recopie d'écran", "screen")
 

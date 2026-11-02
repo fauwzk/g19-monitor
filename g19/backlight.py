@@ -49,9 +49,14 @@ LGS_SETTINGS = Path(os.environ.get("LOCALAPPDATA", "")) / "Logitech" / \
 
 def lgs_started_at():
     """Heure de lancement de LGS (LCore.exe), None s'il ne tourne pas."""
-    for p in psutil.process_iter(["name", "create_time"]):
+    # le nom seul pour trouver LCore (rapide) ; l'heure de lancement, elle, coûte un appel
+    # système par processus : demandée à LCore seulement (sinon ~650 ms d'écran figé)
+    for p in psutil.process_iter(["name"]):
         if (p.info["name"] or "").lower() == "lcore.exe":
-            return p.info["create_time"]
+            try:
+                return p.create_time()
+            except psutil.Error:
+                return None
     return None
 
 

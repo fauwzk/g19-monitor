@@ -55,6 +55,7 @@ try:
     from g19.dnd import DoNotDisturb
     from g19.agenda import Agenda
     from g19.home import Home
+    from g19.daily import DayLog
     from g19.screencap import ScreenMirror
     from g19.streaming import Streaming
     from g19.away import Away
@@ -80,7 +81,8 @@ try:
     from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, RECAP_SECONDS, Ctx, has_lyrics, ignored,
                             volume_popup, popup_event, VOLUME_POPUP,
                             render, render_away, render_fans, render_idle, render_menu, render_recap,
-                            render_splash, theme_of, toast_candidates, current_toast)
+                            render_splash, theme_of, toast_candidates, current_toast,
+                            overlay_toast, note_key)
     from g19.sysalerts import SystemWatch
     from g19.speedtest import SpeedTest
     from g19.sysinfo import SystemStats
@@ -97,6 +99,39 @@ except Exception:
 
 log = logging.getLogger("g19")
 RELOAD_DELAY = 1.5  # s sans nouvelle modification avant de relancer
+LOOP_REPORT = 600   # s entre deux lignes « boucle : … » dans le journal
+
+
+class LoopClock:
+    """Temps passé dans chaque étape de la boucle principale, résumé dans le journal (pour
+    voir où partent les images quand la fluidité réelle n'atteint pas le réglage)."""
+
+    def __init__(self):
+        self.spent, self.worst, self.turns = {}, {}, 0
+        self.since = self._mark = time.perf_counter()
+
+    def lap(self, name):
+        now = time.perf_counter()
+        dt = now - self._mark
+        self._mark = now
+        self.spent[name] = self.spent.get(name, 0.0) + dt
+        self.worst[name] = max(self.worst.get(name, 0.0), dt)
+
+    def turn(self, frames):
+        self.turns += 1
+        span = time.perf_counter() - self.since
+        if span < LOOP_REPORT:
+            return
+        parts = "  ".join(f"{k} {v / self.turns * 1000:.1f} (max {self.worst[k] * 1000:.0f})"
+                          for k, v in sorted(self.spent.items(), key=lambda kv: -kv[1]))
+        slow = "  ".join(f"{k} {v * 1000:.0f}" for k, v in
+                         sorted(_task_slow.items(), key=lambda kv: -kv[1])[:4] if v > 0.02)
+        _task_slow.clear()
+        log.info("boucle : %.1f tours/s, %.1f images/s · ms par tour : %s%s",
+                 self.turns / span, frames / span, parts,
+                 f" · tâches les plus lentes (ms) : {slow}" if slow else "")
+        self.spent, self.worst, self.turns = {}, {}, 0
+        self.since = time.perf_counter()
 
 
 def setup_logging():
@@ -124,6 +159,7 @@ def make_ctx():
                fuel=FuelMonitor(), dnd=DoNotDisturb(),
                agenda=Agenda(lambda: settings.current().get("agenda_remind", 10)),
                home=Home(lambda: settings.current().get("ha_entities") or []),
+               daily=DayLog(),
                driver=AmdDriver(),
                updater=Updater(instance.APP_DIR,
                                lambda: settings.current().get("auto_update", True)))
@@ -288,11 +324,13 @@ def backlight_state(c, cfg):
 
 
 _task_errors = {}
+_task_slow = {}       # tâche → durée la plus longue depuis le dernier résumé (s)
 
 
 def guarded(name, fn, *args, **kw):
     """Lance une tâche périodique ; une exception est notée (une fois par 5 min et par tâche)
     au lieu de faire planter la boucle principale."""
+    t0 = time.perf_counter()
     try:
         return fn(*args, **kw)
     except Exception:
@@ -301,6 +339,10 @@ def guarded(name, fn, *args, **kw):
             _task_errors[name] = now
             log.exception("tâche « %s » en erreur", name)
         return None
+    finally:
+        dt = time.perf_counter() - t0
+        if dt > _task_slow.get(name, 0.0):
+            _task_slow[name] = dt          # la plus lente de chaque tâche (journal « boucle »)
 
 
 # variables qu'une session Claude Code transmet aux programmes qu'elle lance
@@ -608,11 +650,17 @@ def run():
     last_ended = c.games.ended
     fan_panel = None        # indice du profil sous le curseur quand le panneau ventilos est ouvert
     splash.finish()
+    from g19.lcd import LcdThread
+    lcd = LcdThread(lcd)       # l'envoi au G19 n'attend plus dans la boucle
     fps_window = time.time()   # la mesure de fluidité commence après l'écran de démarrage
+    clock, clock_frames = LoopClock(), 0
+    fps_windows = 0
+    next_tick = time.time()    # échéance de la prochaine image (le retard ne s'accumule pas)
     try:
         while not inst.quit_requested():
             now = time.time()
             dog.alive(now)
+            clock.lap("attente")
             if now - last_sample >= 1:
                 rtss.set_blacklist(watch.settings.get("game_blacklist"))
                 c.night = night.is_night(watch.settings, now)
@@ -634,6 +682,9 @@ def run():
                 guarded("réseau", c.net.check_alert, bool(c.gpu.game), now)
                 cands = guarded("bandeaux", toast_candidates, c, None, now) or []
                 guarded("absence", lambda: c.away.update(c, now, cands))
+                guarded("bilan du jour", c.daily.tick, now, not c.away.active,
+                        c.gpu.game["name"] if c.gpu.game else None, media.state,
+                        cfg.get("day_recap_hour", 21))
                 guarded("historique des bandeaux", log_toasts, c, cands)
                 if cfg["backlight"] and now - last_lgs_check >= 60:
                     last_lgs_check = now
@@ -651,6 +702,7 @@ def run():
                     page, visible_pages(c, cfg), c.sessions, tooltip(c, page), c.discord.unread,
                     [p["name"] for p in profs], c.volume.active_profile(profs)))
                 last_sample = now
+            clock.lap("tâches : chaque seconde")
             if now - last_proc >= 5:
                 c.claude_open = claude_running()
                 c.discord_open = discord_running() or c.discord.status == "connecté"
@@ -672,6 +724,7 @@ def run():
                        for sid, st in states.items()) and cfg["backlight_done"] and not quiet:
                     backlight.flash("done", cfg["blinks_done"], blink_ms(cfg))
                 prev_states = states
+            clock.lap("tâches : Claude et processus")
             if now - last_watch >= 1:
                 last_watch = now
                 if watch.poll():
@@ -713,6 +766,7 @@ def run():
                         restart = True
                         break
 
+            clock.lap("tâches : réglages et code")
             for cmd in drain(tray):
                 if cmd[0] == "page" and cmd[1] in visible_pages(c, cfg):
                     page = cmd[1]
@@ -776,8 +830,10 @@ def run():
                 # partie finie sans récapitulatif (option coupée, partie trop courte) ; pas
                 # pendant un alt-tab : la session de jeu existe alors encore
                 page, before_game = page_after_game(page, before_game, cfg, pages), None
+            clock.lap("pages et jeu")
             for b in [*lcd.pressed(), *keys.pressed()]:
                 c.away.poke(now)
+                note_key(b, now)            # la pastille de la touche s'allume un instant
                 if pattern_at:
                     pattern_at = None           # n'importe quelle touche ferme la mire
                     continue
@@ -947,6 +1003,9 @@ def run():
                 elif page == "home" and b == "ok" and c.home and c.home.entities:
                     c.home_sel = min(c.home_sel, len(c.home.entities) - 1)
                     c.home.act(c.home.entities[c.home_sel]["id"])
+                elif page == "daily" and b in ("up", "down"):
+                    # ▲ la veille, ▼ le jour suivant (jusqu'à aujourd'hui)
+                    c.daily_offset = max(-13, min(0, c.daily_offset + (-1 if b == "up" else 1)))
                 elif page == "agenda" and b in ("up", "down") and c.agenda:
                     c.agenda_sel = max(0, min(c.agenda_sel + (1 if b == "down" else -1),
                                               len(c.agenda.events) - 1))
@@ -976,6 +1035,7 @@ def run():
                 c.discord_cursor = None
             if page != shown_page:
                 shown_page = page
+                c.daily_offset = 0          # le Bilan rouvre toujours sur aujourd'hui
                 guarded("état", settings.save_state, page=page)
 
             # flash bleu / blanc à l'arrivée d'un message Discord / d'une notification Windows
@@ -1015,6 +1075,7 @@ def run():
                 name, ok, text = c.volume.profile_events.get_nowait()
                 (log.info if ok else log.warning)("profil audio « %s » : %s", name, text)
                 c.saved_event = (f"Profil audio · {name}", text, now)
+            clock.lap("touches et rétroéclairage")
             c.media = media.state
             last_play = guarded("lecture / pause", follow_play_pause, c, last_play, now) \
                 or last_play
@@ -1032,7 +1093,7 @@ def run():
                 elif c.away.active and cfg.get("idle_screen", True):
                     frame_img = render_idle(c, now)
                 else:
-                    frame_img = render(page, c, now)
+                    frame_img = render(page, c, now, toast=False)
                 last_frame = frame_img
                 mode = ("cover" if cover.open else "menu" if menu.open else
                         "fans" if fan_panel is not None else "recap" if recap else
@@ -1044,6 +1105,8 @@ def run():
                                               cfg.get("animations", True),
                                               cfg.get("animation_style", "slide"),
                                               cfg.get("animation_speed", "normal"))
+                if mode == "page":   # le bandeau reste en place pendant que la page glisse
+                    frame_img = overlay_toast(frame_img, c, page, now)
             except Exception:
                 # une page qui ne se dessine pas ne doit pas arrêter l'appli : on garde l'image
                 # précédente et on note l'erreur (une fois par minute au plus)
@@ -1051,6 +1114,7 @@ def run():
                     render_error_at = now
                     log.exception("erreur de rendu (page %s)", page)
                 frame_img = last_frame or Image.new("RGB", (320, 240))
+            clock.lap("rendu")
             if pattern_at and now - pattern_at < screen.PATTERN_SECONDS:
                 frame_img = screen.pattern(now, pattern_at)   # mire de réglage
             else:
@@ -1070,23 +1134,37 @@ def run():
                 lcd_step = min(lcd_step, 1 / 30)
             # le G19 garde son rythme ; l'aperçu « en direct » de l'utilitaire, lui, reçoit
             # jusqu'à 60 images/s tant qu'il est ouvert (la boucle tourne alors plus vite)
+            clock.lap("retouches")
             if now - last_lcd >= lcd_step * 0.9:
                 last_lcd = now
                 lcd.show(frame_img)
+                clock_frames += 1
                 frames += 1
                 if now - fps_window >= 2:  # fluidité réellement obtenue, affichée dans le menu
-                    first = menu.real_fps is None
                     menu.real_fps = frames / (now - fps_window)
                     frames, fps_window = 0, now
-                    if first:
+                    fps_windows += 1
+                    if fps_windows == 2:   # la 1re fenêtre compte le démarrage (tout se charge)
                         log.info("fluidité : %.1f images/s (réglage %s)", menu.real_fps,
                                  cfg["fps"])
                 lcd.update()
+            clock.lap("envoi au G19")
             mirror.write(frame_img, now)
+            clock.lap("aperçu")
+            clock.turn(clock_frames)
+            if clock.turns == 0:
+                clock_frames = 0
             step = min(lcd_step, 1 / remote.MIRROR_FPS) if mirror.active(now) else lcd_step
+            # rythme tenu sur des échéances : une attente qui déborde un peu (minuteur de
+            # Windows) est rattrapée au tour suivant ; trop en retard, on repart d'ici
+            next_tick += step
+            late = time.time() - next_tick
+            if late > step:
+                next_tick = time.time()
             # un changement de volume réveille la boucle tout de suite
             c.volume.wake.clear()
-            c.volume.wake.wait(max(0.0, step - (time.time() - now)))
+            if c.volume.wake.wait(max(0.0, next_tick - time.time())):
+                next_tick = time.time()
         log.info("relance" if restart else "arrêt demandé")
     except KeyboardInterrupt:
         pass
@@ -1096,7 +1174,7 @@ def run():
     finally:
         dog.stop()
         # chaque fermeture est protégée : une erreur ici ne doit jamais empêcher la relance
-        for step in (c.history.save, c.games.close, c.fans.close, backlight.close, lcd.close,
+        for step in (c.history.save, c.daily.save, c.games.close, c.fans.close, backlight.close, lcd.close,
                      tray.stop):
             try:
                 step()

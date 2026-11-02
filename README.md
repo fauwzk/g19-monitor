@@ -74,10 +74,10 @@ dégradés et panneaux arrondis de **Nokia / Symbian**.
 
 ## Galerie complète
 
-Tous les écrans du G19, thème par thème (20 thèmes × 39 écrans) : Système, GPU en jeu, Jeux (en
+Tous les écrans du G19, thème par thème (20 thèmes × 40 écrans) : Système, GPU en jeu, Jeux (en
 cours et derniers jeux), Steam, Média, paroles, Audio, Discord, Notifications (et « Ne pas
 déranger »), Débit (résultat et test en cours), Météo, VPN, Claude Code, Cœurs du CPU,
-Historique, Batteries, Réseau, Docker, Carburant, Agenda, Maison, historique des bandeaux,
+Historique, Batteries, Réseau, Docker, Carburant, Agenda, Maison, Bilan du jour, historique des bandeaux,
 recopie d'écran ; par-dessus les pages : bandeau, fenêtres de volume et du micro ; réglages,
 les quatre listes d'écrans de la touche Menu (carrousel, à plat, grille, liste), ventilateurs,
 fin de partie, PC au repos, résumé au retour et démarrage. Clique sur un thème pour l'ouvrir.
@@ -325,7 +325,7 @@ dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilit
 | Touche du G19 | Action |
 |---|---|
 | ◄ ► | page précédente / suivante |
-| Menu | carrousel des écrans ; sa dernière carte ouvre les réglages |
+| Menu | carrousel des écrans ; ▼ vue d'ensemble (12 écrans à la fois) ; sa dernière carte ouvre les réglages |
 | OK, ▲ ▼ | action de la page (paroles, vue des graphes, session Claude, muet Discord…) |
 | Annuler | première page, ou fermer |
 
@@ -361,6 +361,7 @@ dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilit
 | **Carburant** | Prix des stations suivies dans Home Assistant (intégration Prix Carburant) : le moins cher en tête, tableau station × carburant, ruptures ; bandeau quand un carburant manque ou revient | ▲ ▼ défiler · OK relire |
 | **Agenda** | Google Agenda (adresse secrète iCal, plusieurs agendas possibles) : l'événement en cours ou le prochain en grand, puis les 7 jours à venir par jour ; bandeau N minutes avant chaque événement | ▲ ▼ choisir · OK rejoindre la réunion (Meet, Zoom, Teams) |
 | **Maison** | Appareils Home Assistant choisis dans l'utilitaire (lumières, prises, interrupteurs, scènes, scripts) en tuiles, allumés en couleur | ▲ ▼ choisir · OK allumer / éteindre / lancer |
+| **Bilan** | Bilan du jour : temps sur le PC, en jeu et en musique (comparés à la veille), activité heure par heure, jeux et artistes du jour ; résumé aussi sur l'écran de repos, et bandeau le soir à l'heure réglée | ▲ ▼ jour précédent / suivant (14 jours) |
 | **Écran PC** | Recopie en direct (~55 i/s) d'un écran du PC, avec le curseur | OK écran suivant · ▲ ▼ zoom |
 
 Les pages Discord et Docker sont masquées tant que l'appli ne tourne pas, et reviennent seules
