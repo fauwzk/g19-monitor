@@ -14,7 +14,8 @@ import urllib.request
 API = "https://lrclib.net/api"
 UA = {"User-Agent": "G19Monitor (Logitech G19 LCD applet)"}
 RETRY = 60                # s avant de retenter un morceau après une erreur (service en panne…)
-FALLBACK_RETRY = 300      # s avant de retenter LRCLIB pour un morceau lu sur le secours
+FALLBACK_RETRY = 45       # s avant de retenter LRCLIB pour un morceau lu sur le secours
+BUSY_TRIES = 4            # essais quand LRCLIB répond « occupé » (503/429 : réessayer sous peu)
 FAILS_BEFORE_TOAST = 2    # échecs de suite avant le bandeau (une coupure passagère : rien)
 OVH = "https://api.lyrics.ovh/v1"
 LRC_LINE = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
@@ -32,9 +33,21 @@ def parse_lrc(text):
 
 
 def _get(path, params):
+    """Réponse JSON de LRCLIB. Surchargé, il répond 503 « réessaie dans un instant » : on
+    attend le Retry-After (1 s d'habitude) et on recommence, la 2e fois passe souvent."""
     url = f"{API}/{path}?{urllib.parse.urlencode(params)}"
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=8) as r:
-        return json.loads(r.read())
+    for attempt in range(BUSY_TRIES):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=8) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 502, 503, 504) or attempt == BUSY_TRIES - 1:
+                raise
+            try:
+                wait = float(e.headers.get("Retry-After") or 0)
+            except ValueError:
+                wait = 0
+            time.sleep(min(5.0, max(wait, 1.0) * (attempt + 1)))
 
 
 def _ovh(artist, title):
@@ -106,20 +119,33 @@ class Lyrics:
                 params["duration"] = round(duration)
             try:
                 data = _get("get", params)
-            except urllib.error.HTTPError:
+            except urllib.error.HTTPError as e:
+                if e.code != 404:     # 404 : pas cette version exacte ; le reste : panne
+                    raise
+            if data and not (data.get("syncedLyrics") or data.get("plainLyrics")
+                             or data.get("instrumental")):
                 data = None
-            if not data or not (data.get("syncedLyrics") or data.get("plainLyrics")
-                                or data.get("instrumental")):
-                found = _get("search", {"artist_name": artist, "track_name": _clean_title(title)})
+            retry_later = False
+            if not data or not (data.get("syncedLyrics") or data.get("instrumental")):
+                # rien, ou seulement le texte brut : on cherche une version synchronisée
+                try:
+                    found = _get("search", {"artist_name": artist,
+                                            "track_name": _clean_title(title)})
+                except Exception:
+                    if not data:
+                        raise
+                    found, retry_later = [], True   # recherche en panne : texte brut de « get »
                 found = [f for f in found if f.get("syncedLyrics") or f.get("plainLyrics")]
-                if duration:
-                    found.sort(key=lambda f: (not f.get("syncedLyrics"),
-                                              abs((f.get("duration") or 0) - duration)))
-                data = found[0] if found else None
+                found.sort(key=lambda f: (not f.get("syncedLyrics"),
+                                          abs((f.get("duration") or 0) - (duration or 0))))
+                if found and (not data or found[0].get("syncedLyrics")):
+                    data = found[0]
             if data:
                 result = {"synced": parse_lrc(data.get("syncedLyrics")),
                           "plain": [l for l in (data.get("plainLyrics") or "").splitlines()],
                           "instrumental": bool(data.get("instrumental"))}
+                if retry_later:
+                    result["fallback_at"] = time.time()   # la version synchronisée plus tard
         except Exception as e:
             # LRCLIB ne répond pas : paroles du secours (non synchronisées), sinon erreur
             backup = _ovh(artist, title)
