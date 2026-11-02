@@ -95,6 +95,7 @@ class LcdThread:
         self._presses = []
         self._cond = threading.Condition()
         self._stop = False
+        self.pushed = 0         # images réellement parties vers le G19 (fluidité réelle)
         self._thread = threading.Thread(target=self._run, daemon=True, name="écran G19")
         self._thread.start()
 
@@ -127,6 +128,7 @@ class LcdThread:
                 if img is not None:
                     self.lcd.show(img)
                     self.lcd.update()
+                    self.pushed += 1
                 new = self.lcd.pressed()
             except (OSError, ValueError):
                 continue

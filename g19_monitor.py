@@ -654,7 +654,7 @@ def run():
     lcd = LcdThread(lcd)       # l'envoi au G19 n'attend plus dans la boucle
     fps_window = time.time()   # la mesure de fluidité commence après l'écran de démarrage
     clock, clock_frames = LoopClock(), 0
-    fps_windows = 0
+    fps_windows, pushed_at = 0, 0
     next_tick = time.time()    # échéance de la prochaine image (le retard ne s'accumule pas)
     try:
         while not inst.quit_requested():
@@ -1141,8 +1141,10 @@ def run():
                 clock_frames += 1
                 frames += 1
                 if now - fps_window >= 2:  # fluidité réellement obtenue, affichée dans le menu
-                    menu.real_fps = frames / (now - fps_window)
-                    frames, fps_window = 0, now
+                    # images vraiment parties vers le G19 (le fil d'envoi en saute si LGS traîne)
+                    menu.real_fps = (lcd.pushed - pushed_at) / (now - fps_window)
+                    frames, fps_window, pushed_at = 0, now, lcd.pushed
+                    guarded("fluidité", remote.publish_fps, menu.real_fps, cfg["fps"])
                     fps_windows += 1
                     if fps_windows == 2:   # la 1re fenêtre compte le démarrage (tout se charge)
                         log.info("fluidité : %.1f images/s (réglage %s)", menu.real_fps,

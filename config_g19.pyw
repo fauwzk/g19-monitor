@@ -131,6 +131,7 @@ class ConfigApp(QMainWindow):
         self.ctx = self.media = None
         self._last_sample = self._last_mirror_req = self._update_at = 0.0
         self._mirror = remote.MirrorReader()   # image du G19 copiée par l'appli (direct)
+        self._shown, self._fps_at = 0, 0.0      # images de l'aperçu affichées (fluidité)
         self._cfg, self._cfg_at = None, 0.0     # réglages relus 4 fois/s pour l'aperçu
         self.bridge = Bridge()
         self.bridge.call.connect(lambda fn: fn())
@@ -260,7 +261,12 @@ class ConfigApp(QMainWindow):
         self.preview = Preview(self._press)
         fl.addWidget(self.preview)
         bl.addWidget(frame, 0, Qt.AlignHCenter)
-        bl.addSpacing(12)
+        # fluidité réelle : celle du G19 (publiée par l'appli) et celle de cet aperçu
+        self.fps_label = label("", "hint")
+        self.fps_label.setAlignment(Qt.AlignCenter)
+        bl.addSpacing(4)
+        bl.addWidget(self.fps_label)
+        bl.addSpacing(8)
         bl.addWidget(self._keypad())
         self.pad_hint = label("", "hint")
         self.pad_hint.setAlignment(Qt.AlignCenter)
@@ -1449,13 +1455,34 @@ class ConfigApp(QMainWindow):
         if self.preview_page.currentData() != LIVE:
             self.preview_page.setCurrentIndex(0)     # on montre l'effet de la touche
 
+    def _show_fps(self, now, running):
+        """Ligne sous l'aperçu, une fois par seconde : « G19 55 i/s (réglage 55) · aperçu 60 »."""
+        if now - self._fps_at < 1:
+            return
+        shown = self._shown / max(1e-6, now - self._fps_at) if self._fps_at else 0
+        self._shown, self._fps_at = 0, now
+        g19 = remote.read_fps() if running else None
+        parts = []
+        if g19:
+            fps, target = g19
+            parts.append(f"G19 : {fps:.0f} i/s (réglage {target:.0f})")
+        elif running:
+            parts.append("G19 : mesure en cours…")
+        else:
+            parts.append("G19 : appli arrêtée")
+        if shown:
+            parts.append(f"aperçu : {shown:.0f} i/s")
+        self.fps_label.setText("  ·  ".join(parts))
+
     def _show(self, img):
+        self._shown += 1
         # agrandi par Qt (bien plus rapide que PIL à 60 images/s)
         self.preview.setPixmap(pil_to_pixmap(img).scaled(
             int(320 * PREVIEW_SCALE), int(240 * PREVIEW_SCALE), Qt.IgnoreAspectRatio,
             Qt.SmoothTransformation))
 
     def _update_preview(self, now, running):
+        self._show_fps(now, running)
         live = self.preview_page.currentData() == LIVE
         if live and running:
             if now - self._last_mirror_req >= 1:

@@ -19,6 +19,40 @@ MIRROR_W, MIRROR_H = 320, 240
 MIRROR_SIZE = MIRROR_HEAD.size + MIRROR_W * MIRROR_H * 3
 
 
+STATS_NAME = "G19MonitorStats"       # mémoire partagée : fluidité réelle du G19
+STATS_HEAD = struct.Struct("<ddd")   # horodatage, images/s envoyées au G19, réglage
+
+
+def _stats_mem():
+    try:
+        return mmap.mmap(-1, STATS_HEAD.size, tagname=STATS_NAME)
+    except (OSError, ValueError):
+        return None
+
+
+_stats = {"mem": None}
+
+
+def publish_fps(fps, target):
+    """Côté appli : images/s réellement envoyées au G19 (toutes les 2 s)."""
+    if _stats["mem"] is None:
+        _stats["mem"] = _stats_mem()
+    if _stats["mem"] is not None:
+        STATS_HEAD.pack_into(_stats["mem"], 0, time.time(), float(fps), float(target))
+
+
+def read_fps(max_age=5):
+    """Côté utilitaire : (images/s du G19, réglage), None si l'appli ne publie plus."""
+    if _stats["mem"] is None:
+        _stats["mem"] = _stats_mem()
+        if _stats["mem"] is None:
+            return None
+    at, fps, target = STATS_HEAD.unpack_from(_stats["mem"], 0)
+    if time.time() - at > max_age:
+        return None
+    return fps, target
+
+
 def _shared():
     """Mémoire partagée de l'aperçu (créée par le premier des deux processus qui l'ouvre)."""
     try:
