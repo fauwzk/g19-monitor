@@ -142,13 +142,19 @@ def fmt_time(sec):
     return f"{sec // 60}:{sec % 60:02d}"
 
 
-def header(img, d, title, t, index=None, count=None, right=None):
-    """Bandeau inversé : titre de la page à gauche, position « 3/8 » et heure à droite."""
+def header(img, d, title, t, index=None, count=None, right=None, dnd=False):
+    """Bandeau inversé : titre de la page à gauche, position « 3/8 » et heure à droite
+    (précédée d'une lune en « Ne pas déranger »)."""
     d.rectangle((0, 0, W - 1, HEAD - 1), fill=1)
     f, fb = small(), small(True)
     right = right if right is not None else time.strftime("%H:%M", time.localtime(t))
     rw = f.textlength(right)
     text(d, (W - 2, HEAD // 2), right, "rm", f, 0)
+    if dnd:                       # croissant : un disque, mordu par un autre
+        x, cy = W - 2 - rw - 4, HEAD // 2
+        d.ellipse((x - 7, cy - 4, x - 1, cy + 3), fill=0)
+        d.ellipse((x - 5, cy - 6, x + 1, cy + 1), fill=1)
+        rw += 10
     pos = f"{index + 1}/{count}" if index is not None and count else ""
     pw = f.textlength(pos) if pos else 0
     if pos:
@@ -436,7 +442,8 @@ def render(page, c, t=None, index=None, count=None):
     img, d = canvas()
     PAGE_FUNCS.get(page, page_clock)(img, d, c, t)
     title, right = (TITLES[page](c, t) if page in TITLES else (PAGES.get(page, page), None))
-    header(img, d, title, t, index, count, right)
+    dnd = getattr(c, "dnd", None)
+    header(img, d, title, t, index, count, right, bool(dnd and dnd.active))
     return img
 
 

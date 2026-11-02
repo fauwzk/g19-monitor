@@ -887,7 +887,7 @@ def claude_icon(d, cx, cy, size, color, spin=0.0):
 
 
 def header(d, index, count, sessions, t, discord=None, alerts=None, title="", done_s=0,
-           streaming=None, headset=None):
+           streaming=None, headset=None, dnd=False):
     title_bar(d)
     lt = time.localtime(t)
     d.text((8, 12), time.strftime("%H:%M", lt), font=font(17, True), fill=HEAD_TEXT, anchor="lm")
@@ -1000,6 +1000,12 @@ def header(d, index, count, sessions, t, discord=None, alerts=None, title="", do
         d.line((x - 9, 17, x - 9, 20), fill=col, width=2)
         d.line((x - 13, 20, x - 5, 20), fill=col, width=2)
         d.ellipse((x - 12, 8, x - 6, 14), fill=col)
+        x -= 18
+
+    # « Ne pas déranger » de Windows : une lune, les bandeaux sont coupés
+    if dnd and x - 20 > left_end:
+        x -= 8
+        icon(d, ICON_MOON, x - 7, 12, 14, HEAD_TEXT)
 
 
 # --- Pages -------------------------------------------------------------------------------------
@@ -3187,11 +3193,20 @@ def ignored(c, item):
     return app == "discord" and c.discord is not None and c.discord.status == "connecté"
 
 
+def dnd_on(c):
+    """« Ne pas déranger » de Windows activé (la lune en haut, pas de bandeau)."""
+    return bool(c.dnd and c.dnd.active)
+
+
 def current_toast(c, page, t):
     """La notification la plus récente encore dans sa durée d'affichage, ou None.
-    "open" : OK peut ouvrir sa page (elle est affichée parmi les pages, et pas déjà à l'écran)."""
+    "open" : OK peut ouvrir sa page (elle est affichée parmi les pages, et pas déjà à l'écran).
+    En « Ne pas déranger », seuls passent le changement d'état lui-même et la sécurité des
+    ventilateurs ; les autres restent dans la page Bandeaux."""
+    quiet = dnd_on(c)
     cands = [(n["at"], n) for n in toast_candidates(c, page, t)
-             if t - n["at"] < c.settings["toast_seconds"] and n["at"] > c.toast_closed]
+             if t - n["at"] < c.settings["toast_seconds"] and n["at"] > c.toast_closed
+             and (not quiet or n.get("urgent"))]
     if not cands:
         return None
     n = max(cands, key=lambda x: x[0])[1]
@@ -3221,9 +3236,8 @@ def toast_candidates(c, page, t):
     dn = c.dnd.event if c.dnd else None
     if dn:
         cands.append((dn[2], {"page": "notifs", "source": "Windows", "title": dn[0],
-                              "body": dn[1], "icon": None, "color": ACCENT}))
-    quiet_win = bool(c.dnd and c.dnd.active)
-    if wn and wn.items and c.settings["win_toasts"] and page != "notifs" and not quiet_win:
+                              "body": dn[1], "icon": None, "color": ACCENT, "urgent": True}))
+    if wn and wn.items and c.settings["win_toasts"] and page != "notifs":
         n = wn.items[0]
         if not ignored(c, n):
             # notification du client Steam (invitation, message…) : aux couleurs de Steam
@@ -3306,7 +3320,8 @@ def toast_candidates(c, page, t):
     fe = c.fans.event if c.fans else None
     if fe:
         cands.append((fe[2], {"page": "system", "source": "Ventilos", "title": fe[0], "body": fe[1], "icon": None,
-                              "color": WARN if "sécurité" in fe[1] else ACCENT}))
+                              "color": WARN if "sécurité" in fe[1] else ACCENT,
+                              "urgent": "sécurité" in fe[1]}))
     m = c.media
     key = (m.title, m.artist) if m and m.title else None
     if key != c.media_key:
@@ -3645,7 +3660,8 @@ def render(page, c, t=None, post=True):
            c.sessions if c.claude_open else None, t, c.discord, c.alerts, title,
            c.settings.get("claude_strip_seconds", 10), c.streaming,
            c.batteries.hyperx if c.batteries and getattr(c.batteries, "hyperx", None)
-           and c.settings.get("headset_mic", True) else None)
+           and c.settings.get("headset_mic", True) else None,
+           dnd_on(c))
     if c.alerts and c.alerts.active and (t * 2) % 2 < 1.4:
         d.rectangle((0, 0, W - 1, H - 1), outline=HOT, width=2)  # cadre rouge clignotant
 

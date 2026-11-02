@@ -981,7 +981,8 @@ def run():
             # flash bleu / blanc à l'arrivée d'un message Discord / d'une notification Windows
             if c.discord.last_notification > last_discord:
                 last_discord = c.discord.last_notification
-                if cfg["backlight"] and cfg["backlight_discord"] and not quiet:
+                if cfg["backlight"] and cfg["backlight_discord"] and not quiet \
+                        and not (c.dnd and c.dnd.active):
                     backlight.flash("discord", cfg["blinks_discord"], blink_ms(cfg))
             if c.notifs.last_time > last_notif:
                 last_notif = c.notifs.last_time

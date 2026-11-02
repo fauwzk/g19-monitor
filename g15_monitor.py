@@ -109,10 +109,11 @@ class Banners:
         self.current = (title, body, now)
 
     def follow(self, c, now):
+        # « Ne pas déranger » : ni notification ni morceau ; le micro reste (on vient d'appuyer)
+        quiet = bool(c.dnd and c.dnd.active)
         wn = c.notifs
         if wn and wn.items:
-            if self.last_notif is not None and wn.last_time > self.last_notif and \
-                    not (c.dnd and c.dnd.active):
+            if self.last_notif is not None and wn.last_time > self.last_notif and not quiet:
                 n = wn.items[0]
                 self.push(f"{n['app']} · {n['title']}".strip(" ·"), n["body"], now)
             self.last_notif = wn.last_time
@@ -121,7 +122,9 @@ class Banners:
         m = c.media
         if m and m.title:
             track = (m.title, m.artist)
-            if self.track is not None and track != self.track:
+            if quiet:
+                pass
+            elif self.track is not None and track != self.track:
                 self.push(f"♪ {m.title}", m.artist or m.app or "", now)
             elif self.track == track and self.playing is not None and m.playing != self.playing:
                 self.push(("Lecture · " if m.playing else "En pause · ") + (m.app or "média"),
