@@ -16,3 +16,5 @@ fonttools
 PySide6-Essentials>=6.6
 hidapi
 numpy
+icalendar>=6
+recurring-ical-events>=3

@@ -272,7 +272,14 @@ def demo_extras(c, t):
         {"source": "Steam", "title": "Rally Horizon", "body": "téléchargement terminé",
          "page": "steam", "at": t - 2400, "icon": None, "color": [102, 192, 244]},
         {"source": "Météo", "title": "Pluie dans ~20 min", "body": "1,2 mm en 15 min · Lyon",
-         "page": "weather", "at": t - 5400, "icon": None, "color": None}])
+         "page": "weather", "at": t - 5400, "icon": None, "color": None},
+        {"source": "Agenda", "title": "Dentiste", "body": "dans 10 min · 16:30 · Cabinet du Parc",
+         "page": "agenda", "at": t - 9000, "icon": None, "color": [66, 133, 244]},
+        {"source": "Spotify · en pause", "title": "⏸ Neon Skyline", "body": "Les Ondes Polaires",
+         "page": "media", "at": t - 86400 - 3000, "icon": None, "color": [235, 90, 120]},
+        {"source": "Succès Steam", "title": "🏆 Pilote certifié",
+         "body": "19,6 % des joueurs · toutes les caméras", "page": "games",
+         "at": t - 86400 - 7200, "icon": None, "color": [102, 192, 244]}])
 
     # recopie d'écran : un bureau dessiné ici
     desk = Image.new("RGB", (320, 180), (24, 60, 110))
@@ -313,6 +320,30 @@ def demo_extras(c, t):
                                           ("System Fan #3", 0, False, None),
                                           ("GPU Fan", 1420, True, 41)))])
     c.steam.root, c.steam.running = "C:/Steam", True
+
+    # agenda et maison inventés
+    day = int(t // 86400) * 86400
+    c.agenda = NS(status="", updated_at=t, event=None, events=[
+        {"uid": "1", "title": "Réunion d'équipe", "start": t - 20 * 60, "end": t + 40 * 60,
+         "all_day": False, "location": "Visio", "calendar": "Travail",
+         "url": "https://meet.google.com/abc-defg-hij"},
+        {"uid": "2", "title": "Dentiste", "start": t + 3 * 3600, "end": t + 3.5 * 3600,
+         "all_day": False, "location": "Cabinet du Parc", "calendar": "Perso", "url": None},
+        {"uid": "3", "title": "Anniversaire de Léa", "start": day + 86400 - 3600,
+         "end": day + 2 * 86400 - 3600, "all_day": True, "location": "", "calendar": "Perso",
+         "url": None},
+        {"uid": "4", "title": "Point projet", "start": t + 26 * 3600, "end": t + 27 * 3600,
+         "all_day": False, "location": "", "calendar": "Travail",
+         "url": "https://meet.google.com/xyz"},
+        {"uid": "5", "title": "Sport", "start": t + 50 * 3600, "end": t + 51 * 3600,
+         "all_day": False, "location": "Salle", "calendar": "Perso", "url": None}])
+    c.home = NS(status="", event=None, all=[], act=lambda eid: None, entities=[
+        {"id": f"light.{k}", "name": n, "domain": dm, "state": st, "brightness": b}
+        for k, (n, dm, st, b) in enumerate((
+            ("Salon", "light", "on", 200), ("Cuisine", "light", "off", None),
+            ("Bureau", "light", "on", 128), ("Chambre", "light", "unavailable", None),
+            ("Prise imprimante 3D", "switch", "on", None), ("Ventilateur", "fan", "off", None),
+            ("Scène soirée", "scene", "scening", None), ("Arrosage", "script", "off", None)))])
 
 
 def fake_games(c, t):
@@ -388,6 +419,8 @@ def screens(c, t, recs, pages):
     page("Réseau", "network")
     page("Docker", "docker")
     page("Carburant", "fuel")
+    page("Agenda", "agenda")
+    page("Maison (Home Assistant)", "home")
     page("Historique des bandeaux", "toasts")
     page("Recopie d'écran", "screen")
 

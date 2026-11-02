@@ -1,4 +1,8 @@
-"""Paroles synchronisées du morceau en cours, via LRCLIB (base libre, sans clé)."""
+"""Paroles synchronisées du morceau en cours, via LRCLIB (base libre, sans clé).
+
+Si LRCLIB ne répond pas (coupure, erreur 5xx), secours par lyrics.ovh : paroles sans
+synchronisation, et nouvel essai de LRCLIB quelques minutes plus tard pour les avoir
+synchronisées."""
 import json
 import re
 import threading
@@ -10,6 +14,9 @@ import urllib.request
 API = "https://lrclib.net/api"
 UA = {"User-Agent": "G19Monitor (Logitech G19 LCD applet)"}
 RETRY = 60                # s avant de retenter un morceau après une erreur (service en panne…)
+FALLBACK_RETRY = 300      # s avant de retenter LRCLIB pour un morceau lu sur le secours
+FAILS_BEFORE_TOAST = 2    # échecs de suite avant le bandeau (une coupure passagère : rien)
+OVH = "https://api.lyrics.ovh/v1"
 LRC_LINE = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
 
 
@@ -30,6 +37,22 @@ def _get(path, params):
         return json.loads(r.read())
 
 
+def _ovh(artist, title):
+    """Paroles sans synchronisation de lyrics.ovh (secours), ou None."""
+    url = f"{OVH}/{urllib.parse.quote(artist)}/{urllib.parse.quote(_clean_title(title))}"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=8) as r:
+            text = (json.loads(r.read()) or {}).get("lyrics") or ""
+    except Exception:
+        return None
+    lines = [l.strip() for l in text.replace("\r", "").splitlines()]
+    while lines and not lines[0]:
+        lines.pop(0)
+    if not any(lines):
+        return None
+    return {"synced": [], "plain": lines, "instrumental": False, "fallback_at": time.time()}
+
+
 def _clean_title(title):
     # « Titre - Remastered 2011 », « Titre (feat. X) » : LRCLIB indexe le titre principal
     return re.sub(r"\s*[-–(\[].*?(remaster|feat\.|ft\.|version|edit|live).*$", "", title,
@@ -42,6 +65,7 @@ class Lyrics:
         self._lock = threading.Lock()
         self.event = None         # (titre, texte, horodatage) : le service ne répond plus
         self._down = False        # panne déjà signalée (un seul bandeau par panne)
+        self._fails = 0           # échecs de suite de LRCLIB
 
     def get(self, media):
         """{'synced': [(t, ligne)], 'plain': [lignes], 'instrumental': bool} ; None pendant la
@@ -55,6 +79,14 @@ class Lyrics:
                 if time.time() - hit[1] < RETRY:
                     return "loading"
                 hit = None
+            if isinstance(hit, dict) and hit.get("fallback_at") and \
+                    time.time() - hit["fallback_at"] > FALLBACK_RETRY:
+                # lu sur le secours : on retente LRCLIB (version synchronisée) en arrière-plan,
+                # les paroles du secours restent affichées en attendant
+                hit["fallback_at"] = time.time()
+                threading.Thread(target=self._fetch, args=(key, media.artist, media.title,
+                                                           media.album, media.duration),
+                                 daemon=True).start()
             if hit is None:
                 self._cache[key] = "loading"
                 threading.Thread(target=self._fetch, args=(key, media.artist, media.title,
@@ -89,18 +121,30 @@ class Lyrics:
                           "plain": [l for l in (data.get("plainLyrics") or "").splitlines()],
                           "instrumental": bool(data.get("instrumental"))}
         except Exception as e:
-            result = "error"          # réseau ou service en panne : on retentera plus tard
-            self._failed(e)
-        if result != "error":
-            self._down = False        # le service répond de nouveau
+            # LRCLIB ne répond pas : paroles du secours (non synchronisées), sinon erreur
+            backup = _ovh(artist, title)
+            self._failed(e, backup is not None)
+            with self._lock:
+                old = self._cache.get(key)
+                if backup:
+                    self._cache[key] = backup
+                elif not (isinstance(old, dict) and old.get("fallback_at")):
+                    # nouvel essai dans RETRY s, pas à chaque image
+                    self._cache[key] = ("error", time.time())
+            return
+        self._fails, self._down = 0, False        # le service répond de nouveau
         with self._lock:
-            # erreur réseau ou service en panne : nouvel essai dans RETRY s, pas à chaque image
-            self._cache[key] = ("error", time.time()) if result == "error" else result
+            old = self._cache.get(key)
+            if result == "missing" and isinstance(old, dict) and old.get("fallback_at"):
+                return            # LRCLIB n'a pas ce morceau : on garde celles du secours
+            self._cache[key] = result
 
 
-    def _failed(self, e):
-        """Premier échec d'une panne : bandeau sur le G19 (pas un par morceau)."""
-        if self._down:
+    def _failed(self, e, backup=False):
+        """Échec de LRCLIB : bandeau au 2e échec de suite (une coupure passagère ne dit
+        rien), une seule fois par panne."""
+        self._fails += 1
+        if self._down or self._fails < FAILS_BEFORE_TOAST:
             return
         self._down = True
         if isinstance(e, urllib.error.HTTPError):
@@ -109,7 +153,11 @@ class Lyrics:
             why = "pas de connexion à lrclib.net"
         else:
             why = f"lrclib.net : {e.__class__.__name__}"
-        self.event = ("Paroles indisponibles", why, time.time())   # nouvel essai chaque minute
+        if backup:
+            self.event = ("Paroles non synchronisées", why + " · secours : lyrics.ovh",
+                          time.time())
+        else:
+            self.event = ("Paroles indisponibles", why, time.time())   # nouvel essai chaque minute
 
 
 def current_index(synced, pos):

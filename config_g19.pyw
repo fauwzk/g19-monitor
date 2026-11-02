@@ -85,7 +85,8 @@ PAGE_INFO = {
                                       "seuils d'alerte."),
     "Audio": ("\uE7F5", "Profils audio : casque, haut-parleurs… à changer d'un geste."),
     "Raccourcis": ("\uE71B", "Les applis à ouvrir depuis le menu du G19."),
-    "Services": ("\uE774", "Météo, réseau, Home Assistant, Discord et Steam."),
+    "Services": ("\uE774", "Météo, réseau, Home Assistant (carburant, maison), Agenda Google, "
+                            "Discord et Steam."),
     "Système": ("\uE713", "L'appli, le démarrage, les ventilateurs et la sauvegarde."),
 }
 
@@ -991,6 +992,144 @@ class ConfigApp(QMainWindow):
         self.choice("fuel_main", card, "Mis en avant", FUEL_MAIN,
                     "Carburant dont le prix le plus bas s'affiche en grand (automatique : celui "
                     "que le plus de stations vendent).", 160)
+        self._card_home(lay)
+        self._card_agenda(lay)
+
+    # --- Maison (Home Assistant) ---
+
+    def _card_home(self, lay):
+        from PySide6.QtWidgets import QListWidget
+        card = self._card(lay, "Maison (page du G19)")
+        card.note("Lumières, prises, interrupteurs, scènes et scripts de Home Assistant, avec le "
+                  "même accès que ci-dessus. Coche ceux à afficher (glisse-les pour l'ordre) ; "
+                  "sans choix, les lumières et les scènes. Sur le G19 : ▲ ▼ choisir, OK "
+                  "allumer / éteindre.")
+        self.home_search = line_edit("", 300, placeholder="Rechercher un appareil…")
+        self.home_search.textChanged.connect(self._filter_home)
+        card.widget(hbox(self.home_search, self.button("Charger les appareils",
+                                                       self._load_home), stretch=True))
+        self.home_list = QListWidget()
+        self.home_list.setDragDropMode(QAbstractItemView.InternalMove)
+        self.home_list.setMinimumHeight(260)
+        self.home_list.setUniformItemSizes(True)
+        self.home_list.itemChanged.connect(self.changed)
+        self.home_list.model().rowsMoved.connect(self.changed)
+        card.widget(self.home_list)
+        self.home_state = card.widget(label("", "hint", wrap=True))
+        chosen = list(self.s.get("ha_entities") or [])
+        for eid in chosen:                     # avant le chargement : les choix déjà faits
+            self._home_item(eid, eid, "", True)
+        self.fields["ha_entities"] = Field(self._home_chosen, lambda v: None)
+
+    def _home_item(self, eid, name, domain, checked):
+        it = QListWidgetItem(f"{name}   ·   {domain or eid.split('.', 1)[0]}")
+        it.setData(Qt.UserRole, eid)
+        it.setFlags(it.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled)
+        it.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+        it.setSizeHint(QSize(0, 26))
+        self.home_list.addItem(it)
+
+    def _home_chosen(self):
+        out = []
+        for i in range(self.home_list.count()):
+            it = self.home_list.item(i)
+            if it.checkState() == Qt.Checked:
+                out.append(it.data(Qt.UserRole))
+        return out
+
+    def _filter_home(self, text):
+        q = text.strip().casefold()
+        for i in range(self.home_list.count()):
+            it = self.home_list.item(i)
+            it.setHidden(bool(q) and q not in it.text().casefold())
+
+    def _load_home(self):
+        from g19 import home
+        url, token = fuel.load_ha()
+        if not (url and token):
+            return self.home_state.setText("Renseigne d'abord l'adresse et le jeton de Home "
+                                           "Assistant ci-dessus.")
+        self.home_state.setText("Chargement…")
+
+        def done(r):
+            if isinstance(r, Exception):
+                msg = fuel.http_error_text(r) if isinstance(r, urllib.error.HTTPError) else \
+                    f"{r.__class__.__name__}: {r}"
+                return self.home_state.setText(f"Impossible de charger : {msg}")
+            chosen = self._home_chosen()
+            by_id = {e["id"]: e for e in r}
+            self.home_list.blockSignals(True)
+            self.home_list.clear()
+            for eid in chosen:                       # les choisis d'abord, dans leur ordre
+                e = by_id.get(eid)
+                if e:
+                    self._home_item(eid, e["name"], e["domain"], True)
+            for e in r:
+                if e["id"] not in chosen:
+                    self._home_item(e["id"], e["name"], e["domain"], False)
+            self.home_list.blockSignals(False)
+            self._filter_home(self.home_search.text())
+            n = {}
+            for e in r:
+                n[e["domain"]] = n.get(e["domain"], 0) + 1
+            self.home_state.setText(f"✔ {len(r)} appareils : " + ", ".join(
+                f"{v} {k}" for k, v in sorted(n.items(), key=lambda kv: -kv[1])) +
+                ". Utilise la recherche pour trouver les tiens.")
+        self.work(lambda: home.controllable(home._request(url, token, "/api/states")), done)
+
+    # --- Agenda Google ---
+
+    def _card_agenda(self, lay):
+        from PySide6.QtWidgets import QPlainTextEdit
+        from g19 import agenda
+        card = self._card(lay, "Agenda Google (page du G19)")
+        card.note("Dans Google Agenda (sur ordinateur) : Paramètres → ton agenda → Intégrer "
+                  "l'agenda → « Adresse secrète au format iCal ». Colle-la ici (une par ligne "
+                  "pour plusieurs agendas). Elle reste sur ce PC, comme un mot de passe.")
+        self.agenda_urls = QPlainTextEdit("\n".join(agenda.load_urls()))
+        self.agenda_urls.setPlaceholderText("https://calendar.google.com/calendar/ical/…/"
+                                            "private-…/basic.ics")
+        self.agenda_urls.setFixedHeight(70)
+        card.widget(self.agenda_urls)
+        card.widget(hbox(self.button("Enregistrer et tester", self._save_agenda, True),
+                         self.button("Ouvrir Google Agenda", lambda: webbrowser.open(
+                             "https://calendar.google.com/calendar/r/settings")), stretch=True))
+        self.agenda_state = card.widget(label("", "hint", wrap=True))
+        self.spin("agenda_remind", card, "Rappel avant un événement", 0, 120, suffix="min",
+                  hint="Bandeau sur le G19 (0 : aucun) ; OK rejoint la réunion Meet, Zoom ou "
+                       "Teams s'il y a un lien.")
+
+    def _save_agenda(self):
+        from g19 import agenda
+        urls = [u.strip() for u in self.agenda_urls.toPlainText().splitlines() if u.strip()]
+        agenda.save_urls(urls)
+        if not urls:
+            return self.agenda_state.setText("Agenda oublié.")
+        self.agenda_state.setText("Test en cours…")
+
+        def job():
+            import time as _t
+            import urllib.request as rq
+            now, out = _t.time(), []
+            for u in urls:
+                req = rq.Request(u.replace("webcal://", "https://"), headers=agenda.UA)
+                with rq.urlopen(req, timeout=20) as r:
+                    out += agenda.parse(r.read(), now)
+            return out
+
+        def done(r):
+            if isinstance(r, urllib.error.HTTPError):
+                return self.agenda_state.setText(
+                    "Lien refusé (404) : vérifie l'adresse secrète." if r.code == 404 else
+                    f"Erreur {r.code} de Google Agenda.")
+            if isinstance(r, Exception):
+                return self.agenda_state.setText(f"Lecture impossible : {r.__class__.__name__}: "
+                                                 f"{r}")
+            self.agenda_state.setText(
+                f"✔ {len(r)} événement(s) dans les 7 prochains jours. La page Agenda se met à "
+                "jour dans la minute." if r else
+                "✔ Agenda lu, mais rien de prévu dans les 7 prochains jours.")
+        self.work(job, done)
 
     def _open_ha_tokens(self):
         url = self.ha_url.text().strip().rstrip("/")

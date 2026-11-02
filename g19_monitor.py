@@ -53,6 +53,8 @@ try:
     from g19.docker_mon import DockerMonitor
     from g19.fuel import FuelMonitor
     from g19.dnd import DoNotDisturb
+    from g19.agenda import Agenda
+    from g19.home import Home
     from g19.screencap import ScreenMirror
     from g19.streaming import Streaming
     from g19.away import Away
@@ -120,6 +122,8 @@ def make_ctx():
                sysw=SystemWatch(settings.current), git=GitStatus(), away=Away(),
                streaming=Streaming(), docker=DockerMonitor(), mirror=ScreenMirror(),
                fuel=FuelMonitor(), dnd=DoNotDisturb(),
+               agenda=Agenda(lambda: settings.current().get("agenda_remind", 10)),
+               home=Home(lambda: settings.current().get("ha_entities") or []),
                driver=AmdDriver(),
                updater=Updater(instance.APP_DIR,
                                lambda: settings.current().get("auto_update", True)))
@@ -473,6 +477,10 @@ def visible_pages(c, cfg):
         hidden.add("docker")
     if not c.fuel or c.fuel.status == "Home Assistant non configuré":
         hidden.add("fuel")
+    if not c.home or c.home.status == "Home Assistant non configuré":
+        hidden.add("home")
+    if not c.agenda or c.agenda.status == "non configuré":
+        hidden.add("agenda")
     return [p for p in cfg["pages"] if p not in hidden] or cfg["pages"][:1]
 
 
@@ -933,6 +941,22 @@ def run():
                         log.warning("ouverture de Steam impossible : %s", e)
                 elif page == "claude" and b in ("up", "down"):
                     c.claude_sel += 1 if b == "down" else -1
+                elif page == "home" and b in ("up", "down") and c.home and c.home.entities:
+                    c.home_sel = (c.home_sel + (1 if b == "down" else -1)) % len(
+                        c.home.entities)
+                elif page == "home" and b == "ok" and c.home and c.home.entities:
+                    c.home_sel = min(c.home_sel, len(c.home.entities) - 1)
+                    c.home.act(c.home.entities[c.home_sel]["id"])
+                elif page == "agenda" and b in ("up", "down") and c.agenda:
+                    c.agenda_sel = max(0, min(c.agenda_sel + (1 if b == "down" else -1),
+                                              len(c.agenda.events) - 1))
+                elif page == "agenda" and b == "ok" and c.agenda and c.agenda.events:
+                    ev = c.agenda.events[min(c.agenda_sel, len(c.agenda.events) - 1)]
+                    if ev.get("url"):         # réunion en ligne : Meet, Zoom, Teams
+                        try:
+                            launch(ev["url"])
+                        except OSError as e:
+                            log.warning("ouverture du lien impossible : %s", e)
             # la session choisie reste visible ; la liste défile avec elle
             c.claude_sel = max(0, min(c.claude_sel, len(c.sessions) - 1))
             if c.claude_sel < c.scroll:
@@ -944,6 +968,8 @@ def run():
                 c.claude_sel_id = c.sessions[c.claude_sel].session_id or ""
             if page == "discord":
                 c.discord.mark_read()
+            if c.home:
+                c.home.show(page == "home" and not cover.open and not menu.open)
             if page != "audio":
                 c.audio_cursor = None
             if page != "discord":

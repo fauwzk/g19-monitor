@@ -74,13 +74,13 @@ dégradés et panneaux arrondis de **Nokia / Symbian**.
 
 ## Galerie complète
 
-Tous les écrans du G19, thème par thème (20 thèmes × 37 écrans) : Système, GPU en jeu, Jeux (en
+Tous les écrans du G19, thème par thème (20 thèmes × 39 écrans) : Système, GPU en jeu, Jeux (en
 cours et derniers jeux), Steam, Média, paroles, Audio, Discord, Notifications (et « Ne pas
 déranger »), Débit (résultat et test en cours), Météo, VPN, Claude Code, Cœurs du CPU,
-Historique, Batteries, Réseau, Docker, Carburant, historique des bandeaux, recopie d'écran ;
-par-dessus les pages : bandeau, fenêtres de volume et du micro ; réglages, les quatre listes
-d'écrans de la touche Menu (carrousel, à plat, grille, liste), ventilateurs, fin de partie, PC
-au repos, résumé au retour et démarrage. Clique sur un thème pour l'ouvrir.
+Historique, Batteries, Réseau, Docker, Carburant, Agenda, Maison, historique des bandeaux,
+recopie d'écran ; par-dessus les pages : bandeau, fenêtres de volume et du micro ; réglages,
+les quatre listes d'écrans de la touche Menu (carrousel, à plat, grille, liste), ventilateurs,
+fin de partie, PC au repos, résumé au retour et démarrage. Clique sur un thème pour l'ouvrir.
 
 <details>
 <summary><b>Sombre</b></summary>
@@ -330,9 +330,9 @@ dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilit
 | Annuler | première page, ou fermer |
 
 - **Utilitaire** (`config_g19.pyw`, Qt) : huit rubriques — Pages, Apparence (thème, image de
-  l'écran, mode nuit), Bandeaux, Clavier et alertes, Audio, Raccourcis, Services (météo, réseau,
-  Home Assistant, Discord, Steam) et Système. Les réglages s'appliquent tout de suite, sans
-  bouton « Enregistrer ». L'aperçu « ● G19 en direct » montre l'écran du clavier, et le pavé
+  l'écran, mode nuit), Bandeaux, Clavier et alertes, Audio, Raccourcis, Services (météo,
+  réseau, Home Assistant pour le carburant et la maison, Agenda Google, Discord, Steam) et
+  Système. Les réglages s'appliquent tout de suite, sans bouton « Enregistrer ». L'aperçu « ● G19 en direct » montre l'écran du clavier, et le pavé
   dessous le pilote comme le vrai clavier.
 - **Zone de notification** : icône avec l'état de Claude et les messages non lus ; menu pour
   choisir la page, ouvrir le journal, redémarrer ou quitter.
@@ -359,6 +359,8 @@ dans le menu du G19 ou la carte *Mises à jour* de l'onglet Système de l'utilit
 | **Réseau** | Ping chaque seconde : latence, gigue, pertes, 2 min de graphe ; bandeau en jeu sur un pic | |
 | **Docker** | Conteneurs : état, CPU, RAM, code de sortie, redémarrages ; bandeau en cas de panne ou de redémarrage en boucle | ▲ ▼ défiler |
 | **Carburant** | Prix des stations suivies dans Home Assistant (intégration Prix Carburant) : le moins cher en tête, tableau station × carburant, ruptures ; bandeau quand un carburant manque ou revient | ▲ ▼ défiler · OK relire |
+| **Agenda** | Google Agenda (adresse secrète iCal, plusieurs agendas possibles) : l'événement en cours ou le prochain en grand, puis les 7 jours à venir par jour ; bandeau N minutes avant chaque événement | ▲ ▼ choisir · OK rejoindre la réunion (Meet, Zoom, Teams) |
+| **Maison** | Appareils Home Assistant choisis dans l'utilitaire (lumières, prises, interrupteurs, scènes, scripts) en tuiles, allumés en couleur | ▲ ▼ choisir · OK allumer / éteindre / lancer |
 | **Écran PC** | Recopie en direct (~55 i/s) d'un écran du PC, avec le curseur | OK écran suivant · ▲ ▼ zoom |
 
 Les pages Discord et Docker sont masquées tant que l'appli ne tourne pas, et reviennent seules

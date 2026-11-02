@@ -99,10 +99,10 @@ def stylesheet(name):
     QPushButton#key {{ padding: 6px 4px; min-width: 38px; font-weight: 600; }}
     QPushButton#flat {{ background: transparent; border: none; color: {c['ACCENT']}; padding: 4px 6px; }}
     QPushButton#flat:hover {{ text-decoration: underline; }}
-    QLineEdit, QSpinBox, QComboBox {{ background: {c['FIELD']}; border: 1px solid {c['LINE']};
+    QLineEdit, QSpinBox, QComboBox, QPlainTextEdit {{ background: {c['FIELD']}; border: 1px solid {c['LINE']};
         border-radius: 6px; padding: 5px 8px; selection-background-color: {c['ACCENT']};
         selection-color: {c['ON_ACCENT']}; }}
-    QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{ border: 1px solid {c['ACCENT']}; }}
+    QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus {{ border: 1px solid {c['ACCENT']}; }}
     QSpinBox QLineEdit {{ padding: 0; border: none; background: transparent; }}
     QSpinBox::up-button, QSpinBox::down-button {{ width: 0; border: none; subcontrol-origin: margin; }}
     QComboBox::drop-down {{ border: none; width: 22px; }}

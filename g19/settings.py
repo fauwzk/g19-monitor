@@ -55,6 +55,8 @@ PAGE_TITLES = {
     "network": "Réseau",
     "docker": "Docker",
     "fuel": "Carburant",
+    "agenda": "Agenda",
+    "home": "Maison",
     "toasts": "Bandeaux",
     "screen": "Écran PC",
 }
@@ -90,6 +92,8 @@ DEFAULTS = {
     "animation_speed": "normal",     # fast, normal, slow
     "claude_reminders": True,        # rappel (bandeau + clavier) : Claude attend depuis 10 min
     "rain_toasts": True,             # bandeau « pluie dans ~30 min »
+    "agenda_remind": 10,             # rappel N min avant un événement de l'agenda (0 : aucun)
+    "ha_entities": [],               # appareils Home Assistant de la page Maison (vide : auto)
     "fuel_toasts": True,             # bandeau quand un carburant est en rupture ou revient
     "fuel_main": "",                 # carburant mis en avant (vide : le plus courant)
     "docker_toasts": True,           # bandeau quand un conteneur plante ou boucle

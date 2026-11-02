@@ -39,6 +39,7 @@ MOIS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sep
 DISCORD = (88, 101, 242)
 STEAM_BLUE = (102, 192, 244)
 STEAM_GAME = (144, 186, 60)
+GOOGLE_BLUE = (66, 133, 244)
 
 # --- thèmes : les couleurs ci-dessus et celles de la météo sont remplacées à chaud ---
 DARK = {"BG": BG, "PANEL": PANEL, "TRACK": TRACK, "TEXT": TEXT, "MUTED": MUTED,
@@ -382,6 +383,10 @@ class Ctx:
     mirror: object = None        # screencap.ScreenMirror (page Écran PC)
     docker_scroll: int = 0
     fuel: object = None          # fuel.FuelMonitor : prix des carburants (Home Assistant)
+    agenda: object = None        # agenda.Agenda : Google Agenda (adresse iCal)
+    home: object = None          # home.Home : appareils Home Assistant (page Maison)
+    agenda_sel: int = 0          # page Agenda : événement choisi (OK ouvre sa réunion)
+    home_sel: int = 0            # page Maison : appareil choisi (OK l'allume / l'éteint)
     dnd: object = None           # dnd.DoNotDisturb : « Ne pas déranger » de Windows
     fuel_scroll: int = 0
     gpu_view: str = "both"       # page GPU en jeu : FPS et temps d'image, ou l'un des deux (OK)
@@ -1737,6 +1742,172 @@ def _docker_row(d, x, y):
 FUEL_ROWS = 5
 
 
+ICON_CALENDAR, ICON_HOME = "\uE787", "\uE80F"
+HOME_ICONS = {"light": "\uEA80", "switch": "\uE7E8", "input_boolean": "\uE7E8",
+              "scene": "\uE790", "script": "\uE768", "fan": "\uE945", "cover": "\uE80F"}
+AGENDA_ROW = 22
+
+
+def fmt_until(sec):
+    sec = max(0, int(sec))
+    if sec < 3600:
+        return f"dans {max(1, sec // 60)} min"
+    if sec < 86400:
+        return f"dans {sec // 3600} h {sec % 3600 // 60:02d}"
+    return f"dans {sec // 86400} j"
+
+
+def page_agenda(img, d, c, t):
+    """Agenda : l'événement en cours ou le prochain en grand, puis la liste par jour."""
+    from .agenda import day_label
+    ag = c.agenda
+    if not ag or ag.status == "non configuré":
+        empty_state(d, ICON_CALENDAR, "Agenda",
+                    "à configurer : utilitaire → Services → Agenda Google", GOOGLE_BLUE)
+        return
+    events = ag.events
+    if not events:
+        msg = ag.status or "rien de prévu ces 7 prochains jours"
+        empty_state(d, ICON_CALENDAR, "Agenda", msg, GOOGLE_BLUE)
+        return
+    sel = max(0, min(c.agenda_sel, len(events) - 1))
+    c.agenda_sel = sel
+    # carte du haut : l'événement choisi (par défaut le prochain, ou celui en cours)
+    ev = events[sel]
+    panel(d, (6, 28, W - 6, 96), 6)
+    d.rounded_rectangle((6, 28, 10, 96), 2, fill=GOOGLE_BLUE)
+    live = ev["start"] <= t < ev["end"]
+    if live:
+        tag = "EN COURS"
+    elif ev["all_day"]:
+        tag = day_label(ev["start"], t).upper() + " · JOURNÉE"
+    elif ev["start"] - t < 6 * 3600:
+        tag = fmt_until(ev["start"] - t).upper()
+    else:
+        tag = (f"{day_label(ev['start'], t)} "
+               f"{time.strftime('%H:%M', time.localtime(ev['start']))}").upper()
+    d.text((18, 38), tag, font=font(9, True), fill=OK if live else GOOGLE_BLUE, anchor="lm")
+    if ev["calendar"]:
+        d.text((W - 14, 38), fit(d, ev["calendar"], font(9), 120), font=font(9),
+               fill=MUTED, anchor="rm")
+    d.text((18, 56), fit(d, ev["title"], font(15, True), W - 36), font=font(15, True),
+           fill=TEXT, anchor="lm")
+    if ev["all_day"]:
+        when = day_label(ev["start"], t)
+    else:
+        when = (f"{day_label(ev['start'], t)} · "
+                f"{time.strftime('%H:%M', time.localtime(ev['start']))} – "
+                f"{time.strftime('%H:%M', time.localtime(ev['end']))}")
+    line = when + (f" · {ev['location']}" if ev["location"] else "")
+    d.text((18, 74), fit(d, line, font(10), W - 36), font=font(10), fill=MUTED, anchor="lm")
+    if live and not ev["all_day"]:
+        bar(d, 18, 85, W - 112, 5, (t - ev["start"]) / max(1, ev["end"] - ev["start"]),
+            GOOGLE_BLUE, smooth=True)
+    if ev.get("url"):
+        key_hints(d, 87, [("OK", "rejoindre")], "right", color=GOOGLE_BLUE)
+
+    # liste : un intitulé par jour, puis une ligne par événement
+    rows, last_day = [], None
+    for k, e in enumerate(events):
+        label = day_label(e["start"], t)
+        if label != last_day:
+            rows.append(("day", label))
+            last_day = label
+        rows.append(("ev", k))
+    top, bottom = 102, H - 4
+    visible = (bottom - top) // AGENDA_ROW
+    pos = next(i for i, r in enumerate(rows) if r == ("ev", sel))
+    scroll = max(0, min(pos - 1, len(rows) - visible))
+    ty = top + (pos - scroll) * AGENDA_ROW
+    cur, settled = glide_cursor("agenda_cursor", (4, ty + 1, W - 4, ty + AGENDA_ROW - 1), t)
+
+    def draw_row(layer, ld, idx, y):
+        kind, val = rows[idx]
+        cy = y + AGENDA_ROW // 2
+        if kind == "day":
+            ld.text((10, cy + 2), val.upper(), font=font(9, True), fill=GOOGLE_BLUE, anchor="lm")
+            ld.line((ld.textlength(val.upper(), font=font(9, True)) + 18, cy + 2, W - 10, cy + 2),
+                    fill=TRACK)
+            return
+        e = events[val]
+        if val == sel and settled:
+            panel(ld, (4, y + 1, W - 4, y + AGENDA_ROW - 1), 5,
+                  outline=None if _theme == "g19" else GOOGLE_BLUE,
+                  color=dim(GOOGLE_BLUE, 0.3) if _theme == "g19" else PANEL)
+        when = "journée" if e["all_day"] else time.strftime("%H:%M", time.localtime(e["start"]))
+        now_on = e["start"] <= t < e["end"]
+        ld.text((12, cy), when, font=font(10, True), fill=OK if now_on else TEXT, anchor="lm")
+        ld.text((62, cy), fit(ld, e["title"], font(11), W - 62 - 24), font=font(11),
+                fill=TEXT, anchor="lm")
+        if e.get("url"):
+            icon(ld, "\uE714", W - 16, cy, 11, GOOGLE_BLUE)      # caméra : réunion en ligne
+    smooth_rows(img, "agenda_rows", scroll, len(rows), top, top + visible * AGENDA_ROW,
+                AGENDA_ROW, draw_row, t)
+    if not settled:
+        draw_glide_cursor(d, cur, GOOGLE_BLUE, top, top + visible * AGENDA_ROW, 5)
+
+
+def page_home(img, d, c, t):
+    """Maison : appareils Home Assistant en tuiles ; ▲ ▼ choisir, OK allumer / éteindre."""
+    from .home import is_on
+    h = c.home
+    if not h or not h.entities:
+        msg = (h.status if h and h.status else "aucun appareil") if h else "indisponible"
+        if msg == "Home Assistant non configuré":
+            msg = "Home Assistant à configurer : utilitaire → Services"
+        elif msg == "":
+            msg = "choisis les appareils dans l'utilitaire → Services → Maison"
+        empty_state(d, ICON_HOME, "Maison", msg)
+        return
+    ents = h.entities
+    sel = max(0, min(c.home_sel, len(ents) - 1))
+    c.home_sel = sel
+    cols, tw, th, gap = 2, (W - 18) // 2, 46, 6
+    top = 30
+    rows_vis = (H - top - 4) // (th + gap)
+    first_row = max(0, min(sel // cols - rows_vis + 1, (len(ents) - 1) // cols - rows_vis + 1))
+    sr, sc = divmod(sel, cols)
+    sx, sy = 6 + sc * (tw + gap), top + (sr - first_row) * (th + gap)
+    cur, settled = glide_cursor("home_cursor", (sx, sy, sx + tw, sy + th), t)
+    for k, e in enumerate(ents):
+        r, col = divmod(k, cols)
+        if not first_row <= r < first_row + rows_vis:
+            continue
+        x = 6 + col * (tw + gap)
+        y = top + (r - first_row) * (th + gap)
+        on = is_on(e)
+        off_line = e["state"] == "unavailable"
+        chosen = k == sel and settled
+        panel(d, (x, y, x + tw, y + th), 7,
+              outline=(TEXT if chosen else None),
+              color=dim(ACCENT, 0.45) if on else PANEL)
+        if chosen:
+            d.rounded_rectangle((x, y, x + tw, y + th), 7, outline=ACCENT if not on else TEXT,
+                                width=2)
+        icon(d, HOME_ICONS.get(e["domain"], ICON_HOME), x + 20, y + th // 2, 18,
+             TEXT if on else (MUTED if not off_line else dim(MUTED, 0.5)))
+        name_lines = wrap(d, e["name"], font(11, True), tw - 44, 2)
+        nf, step = font(11, True), 13
+        if len(name_lines) > 1:
+            nf, step = font(9, True), 10
+            name_lines = wrap(d, e["name"], nf, tw - 44, 2)
+        for i, ln in enumerate(name_lines):
+            d.text((x + 38, y + 6 + i * step), ln, font=nf,
+                   fill=TEXT if not off_line else MUTED)
+        if e["domain"] in ("scene", "script"):
+            state = "lancer"
+        elif off_line:
+            state = "indisponible"
+        else:
+            state = "allumé" if on else "éteint"
+            if on and e.get("brightness"):
+                state += f" · {e['brightness'] * 100 // 255} %"
+        d.text((x + 38, y + th - 9), state, font=font(9, True if on else False),
+               fill=(TEXT if on else MUTED), anchor="lm")
+    if len(ents) > rows_vis * cols:
+        d.text((W - 8, H - 3), f"{sel + 1}/{len(ents)}", font=font(8), fill=MUTED, anchor="rb")
+
+
 def page_fuel(d, c, t):
     """Prix des carburants des stations suivies dans Home Assistant : le moins cher en tête,
     puis un tableau station × carburant (moins cher en vert, rupture en rouge)."""
@@ -1825,44 +1996,81 @@ def page_fuel(d, c, t):
     d.text((10, 236), fit(d, foot, font(9), room), font=font(9), fill=color, anchor="lb")
 
 
-TOAST_ROWS = 6
+
+
+TOAST_ROW = 32
+
+
+def toast_when(at, t):
+    """Heure d'un bandeau : « 18:30 » aujourd'hui, « hier 18:30 », sinon « 3 nov. 18:30 »."""
+    lt, now = time.localtime(at), time.localtime(t)
+    hm = time.strftime("%H:%M", lt)
+    if (lt.tm_year, lt.tm_yday) == (now.tm_year, now.tm_yday):
+        return hm
+    if t - at < 2 * 86400 and (now.tm_yday - lt.tm_yday) % 366 == 1:
+        return f"hier {hm}"
+    return f"{lt.tm_mday} {MOIS[lt.tm_mon - 1]} {hm}"
 
 
 def page_toasts(img, d, c, t):
     """Les 20 derniers bandeaux, le plus récent en haut ; ▲ ▼ choisir, OK ouvrir."""
     log = list(c.toast_log or ())
-    d.text((10, 36), "Derniers bandeaux", font=font(12, True), fill=TEXT, anchor="lm")
     if not log:
         empty_state(d, ICON_MESSAGE, "Aucun bandeau pour l'instant",
                     "messages, amis, alertes… les 20 derniers restent ici")
         return
-    c.toast_sel = max(0, min(c.toast_sel, len(log) - 1))
-    top = max(0, min(c.toast_sel - TOAST_ROWS + 2, len(log) - TOAST_ROWS))
-    top = min(top, c.toast_sel)
-    d.text((W - 10, 36), f"{c.toast_sel + 1}/{len(log)}", font=font(9), fill=MUTED, anchor="rm")
+    sel = c.toast_sel = max(0, min(c.toast_sel, len(log) - 1))
+    top, bottom = 28, H - 15
+    visible = (bottom - top) // TOAST_ROW
+    scroll = max(0, min(sel - visible // 2, len(log) - visible))
     cache = c.discord.avatars if c.discord else None
-    for i, n in enumerate(log[top:top + TOAST_ROWS]):
-        y = 48 + i * 31
-        color = n.get("color") or ACCENT
-        if isinstance(color, list):
-            color = tuple(color)
-        panel(d, (6, y, W - 6, y + 28), 5)
-        d.rounded_rectangle((6, y, 9, y + 28), 2, fill=color)
-        avatar(img, d, cache, n.get("icon"), 26, y + 14, 20, n.get("title") or n.get("source"),
-               color=color)
-        when = time.strftime("%H:%M", time.localtime(n["at"]))
-        d.text((W - 12, y + 8), when, font=font(9), fill=MUTED, anchor="rm")
-        sw = d.textlength(when, font=font(9)) + 8
-        src = fit(d, n.get("source") or "", font(8, True), 90)
-        d.text((W - 12 - sw, y + 8), src, font=font(8, True), fill=color, anchor="rm")
-        sw += d.textlength(src, font=font(8, True)) + 6
-        d.text((42, y + 8), fit(d, n.get("title") or "", font(11, True), W - 54 - sw),
-               font=font(11, True), fill=TEXT, anchor="lm")
-        d.text((42, y + 21), fit(d, n.get("body") or "", font(10), W - 54), font=font(10),
-               fill=dim(TEXT, 0.75), anchor="lm")
-    cy = glide("toasts_cursor", 48 + (c.toast_sel - top) * 31, t)
-    d.rounded_rectangle((6, cy, W - 6, cy + 28), 5, outline=ACCENT, width=1)
-    key_hints(d, 230, [("▲▼", "choisir"), ("OK", "ouvrir")])
+    ty = top + (sel - scroll) * TOAST_ROW
+    cur, settled = glide_cursor("toasts_cursor", (6, ty + 1, W - 6, ty + TOAST_ROW - 2), t)
+
+    def color_of(n):
+        col = n.get("color") or ACCENT
+        if isinstance(col, list):
+            col = tuple(col)
+        if isinstance(col, str):
+            col = globals().get(AWAY_COLORS.get(col, ""), ACCENT)
+        return col
+
+    def draw_row(layer, ld, idx, y):
+        n = log[idx]
+        col = color_of(n)
+        on = idx == sel and settled
+        box = (6, y + 1, W - 6, y + TOAST_ROW - 2)
+        if on:
+            panel(ld, box, 6, outline=None if _theme == "g19" else col,
+                  color=dim(col, 0.35) if _theme == "g19" else PANEL)
+        else:
+            panel(ld, box, 6)
+        ld.rounded_rectangle((6, y + 1, 9, y + TOAST_ROW - 2), 2, fill=col)
+        cy = y + TOAST_ROW // 2
+        name = n.get("title") or n.get("source") or "?"
+        if n.get("icon"):
+            avatar(layer, ld, cache, n["icon"], 26, cy, 22, name, color=col)
+        else:                                # pas d'image : pastille de la couleur de la source
+            ld.rounded_rectangle((15, cy - 11, 37, cy + 11), 6, fill=dim(col, 0.55))
+            ld.text((26, cy), (n.get("source") or name)[:1].upper(), font=font(12, True),
+                    fill=TEXT, anchor="mm")
+        when = toast_when(n["at"], t)
+        ww = int(ld.textlength(when, font=font(9)))
+        ld.text((W - 13, cy - 7), when, font=font(9), fill=MUTED, anchor="rm")
+        ld.text((44, cy - 7), fit(ld, name, font(11, True), W - 64 - ww), font=font(11, True),
+                fill=TEXT, anchor="lm")
+        src = fit(ld, n.get("source") or "", font(8, True), 80)
+        sw = int(ld.textlength(src, font=font(8, True)))
+        ld.text((W - 13, cy + 7), src, font=font(8, True), fill=col, anchor="rm")
+        ld.text((44, cy + 7), fit(ld, n.get("body") or "", font(10), W - 66 - sw), font=font(10),
+                fill=dim(TEXT, 0.78), anchor="lm")
+
+    smooth_rows(img, "toasts_rows", scroll, len(log), top, top + visible * TOAST_ROW,
+                TOAST_ROW, draw_row, t)
+    if not settled:
+        draw_glide_cursor(d, cur, color_of(log[sel]), top, top + visible * TOAST_ROW)
+    key_hints(d, H - 7, [("▲▼", "choisir"), ("OK", "ouvrir")])
+    d.text((W - 10, H - 7), f"{sel + 1} / {len(log)}", font=font(9), fill=MUTED, anchor="rm")
 
 
 def page_screen(img, d, c, t):
@@ -2510,6 +2718,21 @@ def key_hints(d, y, items, align="left", x=None, color=None):
     return total
 
 
+def glide_cursor(key, box, t, tau=0.06):
+    """Curseur de choix qui glisse vers `box` (x0, y0, x1, y1) : renvoie (case glissée,
+    arrivé ?). Arrivé, la ligne choisie se colore elle-même ; en route, un cadre glisse."""
+    g = tuple(glide((key, k), v, t, tau) for k, v in enumerate(box))
+    return g, max(abs(a - b) for a, b in zip(g, box)) < 0.5
+
+
+def draw_glide_cursor(d, g, color, top=0, bottom=H, radius=6):
+    """Cadre du curseur en route, coupé à la zone de la liste."""
+    x0, y0, x1, y1 = g
+    y0, y1 = max(y0, top), min(y1, bottom - 1)
+    if y1 - y0 > 4:
+        d.rounded_rectangle((x0, y0, x1, y1), radius, outline=color, width=2)
+
+
 def smooth_rows(img, key, scroll, count, top, bottom, row_h, draw_row, t):
     """Liste qui défile en douceur : la position glisse vers la ligne `scroll`, les lignes
     sont dessinées sur un morceau du fond (top → bottom) puis reposées, coupées net aux bords.
@@ -3099,6 +3322,15 @@ def toast_candidates(c, page, t):
     if ly:                   # service des paroles en panne (un bandeau par panne)
         cands.append((ly[2], {"page": "media", "source": "Paroles", "title": ly[0],
                               "body": ly[1], "icon": None, "color": WARN}))
+    ag = c.agenda.event if c.agenda else None
+    if ag:                   # rappel avant un événement de l'agenda ; OK ouvre la réunion
+        cands.append((ag[2], {"page": "agenda", "source": "Agenda", "title": ag[0],
+                              "body": ag[1], "icon": None, "color": GOOGLE_BLUE,
+                              "url": ag[3]}))
+    he = c.home.event if c.home else None
+    if he:
+        cands.append((he[2], {"page": "home", "source": "Maison", "title": he[0],
+                              "body": he[1], "icon": None, "color": HOT}))
     mt = c.media_toggle      # même morceau mis en pause ou relancé : bandeau comme les autres
     if key and mt and c.settings.get("pause_toasts", True) and page != "media":
         cands.append((mt[0], {"page": "media",
@@ -3243,6 +3475,8 @@ def page_discord_panel(img, d, c, t):
     visible = (H - 4 - top) // DISCORD_ROW
     bottom = top + visible * DISCORD_ROW          # pas de ligne coupée en bas
     scroll = max(0, min(cur - visible // 2, len(lines) - visible))
+    ty = top + (cur - scroll) * DISCORD_ROW
+    gcur, settled = glide_cursor("discord_cursor", (4, ty + 1, W - 4, ty + DISCORD_ROW - 1), t)
     members = v["members"] if v else {}
     notes = list(dc.notifications)
 
@@ -3270,7 +3504,7 @@ def page_discord_panel(img, d, c, t):
     def draw_row(layer, ld, idx, y):
         row = lines[idx]
         kind, on = row["kind"], idx == cur
-        if on:
+        if on and settled:
             panel(ld, (4, y + 1, W - 4, y + DISCORD_ROW - 1), 5,
                   outline=None if _theme == "g19" else DISCORD,
                   color=dim(DISCORD, 0.35) if _theme == "g19" else PANEL)
@@ -3319,6 +3553,8 @@ def page_discord_panel(img, d, c, t):
         empty_state(d, ICON_PEOPLE, "Discord", "ni appel ni message", DISCORD)
         return
     smooth_rows(img, "discord_panel", scroll, len(lines), top, bottom, DISCORD_ROW, draw_row, t)
+    if not settled:
+        draw_glide_cursor(d, gcur, DISCORD, top, bottom, 5)
 
 
 # --- Assemblage --------------------------------------------------------------------------------
@@ -3327,6 +3563,8 @@ DATA_READY = {
     "weather": lambda c: c.weather and c.weather.data,
     "steam": lambda c: c.steam and (c.steam.friends or c.steam.downloads),
     "fuel": lambda c: c.fuel and c.fuel.stations,
+    "agenda": lambda c: c.agenda and c.agenda.updated_at,
+    "home": lambda c: c.home and c.home.entities,
 }
 
 
@@ -3360,6 +3598,10 @@ def render(page, c, t=None, post=True):
         page_docker(d, c, t)
     elif page == "fuel":
         page_fuel(d, c, t)
+    elif page == "agenda":
+        page_agenda(img, d, c, t)
+    elif page == "home":
+        page_home(img, d, c, t)
     elif page == "toasts":
         page_toasts(img, d, c, t)
     elif page == "screen":
@@ -3561,9 +3803,9 @@ def page_speedtest(d, sp, t):
         vmax = 2500 if sp.peak > 1000 else 1000
         color = OK if sp.phase == "download" else ACCENT if sp.phase == "upload" else WARN
         value = sp.live if sp.phase in ("download", "upload") else 0
-        speed_gauge(d, W // 2, 108, 66, value, vmax, color, PHASES.get(sp.phase, ""))
-        bar(d, 40, 184, 240, 4, sp.progress, color)
-        result_cols(d, 200, sp.ping, sp.jitter, sp.down, None if sp.phase != "upload" else sp.live)
+        speed_gauge(d, W // 2, 102, 66, value, vmax, color, PHASES.get(sp.phase, ""))
+        bar(d, 40, 178, 240, 4, sp.progress, color)
+        result_cols(d, 194, sp.ping, sp.jitter, sp.down, None if sp.phase != "upload" else sp.live)
         key_hints(d, 38, [("OK", "annuler")], "right")
         return
 
