@@ -3324,6 +3324,13 @@ def dnd_on(c):
     return bool(c.dnd and c.dnd.active)
 
 
+def choosing(c, page):
+    """Un choix est ouvert sur la page (sortie audio, panneau d'appel Discord) : OK et
+    Annuler lui appartiennent, pas au bandeau affiché par-dessus."""
+    return (page == "audio" and c.audio_cursor is not None) or \
+        (page == "discord" and c.discord_cursor is not None)
+
+
 def current_toast(c, page, t):
     """La notification la plus récente encore dans sa durée d'affichage, ou None.
     "open" : OK peut ouvrir sa page (elle est affichée parmi les pages, et pas déjà à l'écran).
@@ -3336,6 +3343,9 @@ def current_toast(c, page, t):
     if not cands:
         return None
     n = max(cands, key=lambda x: x[0])[1]
+    if choosing(c, page):
+        n.pop("open", None)       # pas de pastilles OK / Annuler : les touches vont au choix
+        return n
     pages = c.pages or c.settings.get("pages") or []
     n["open"] = bool(n.get("url") or n.get("session")) or \
         (bool(n.get("page")) and n["page"] in pages and n["page"] != page)

@@ -82,7 +82,7 @@ try:
                             volume_popup, popup_event, VOLUME_POPUP,
                             render, render_away, render_fans, render_idle, render_menu, render_recap,
                             render_splash, theme_of, toast_candidates, current_toast,
-                            overlay_toast, note_key)
+                            overlay_toast, note_key, choosing)
     from g19.sysalerts import SystemWatch
     from g19.speedtest import SpeedTest
     from g19.sysinfo import SystemStats
@@ -848,7 +848,7 @@ def run():
                     continue                # la touche réveille seulement l'écran
                 # bandeau affiché : OK ouvre sa page, Annuler le ferme (pas sous un menu)
                 if b in ("ok", "cancel") and not cover.open and not menu.open \
-                        and fan_panel is None:
+                        and fan_panel is None and not choosing(c, page):
                     n = current_toast(c, page, now)
                     if n and (b == "cancel" or n.get("open")):
                         c.toast_closed = now
