@@ -89,6 +89,8 @@ try:
     if os.name != "nt":          # Linux : lecteurs MPRIS (D-Bus) à la place de SMTC
         from g19.linux.mpris import MprisMonitor as MediaMonitor   # noqa: F811
     from g19.notifications import WindowsNotifications, flash_kind
+    if os.name != "nt":          # Linux : notifications du bureau (D-Bus)
+        from g19.linux.dbusnotify import LinuxNotifications
     from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, RECAP_SECONDS, Ctx, has_lyrics, ignored,
                             volume_popup, popup_event, VOLUME_POPUP,
                             render, render_away, render_fans, render_idle, render_menu, render_recap,
@@ -164,7 +166,7 @@ def make_ctx():
     steam = SteamLive()
     return Ctx(stats=SystemStats(), gpu=GpuMonitor() if os.name == "nt" else LinuxGpu(), sessions=[], settings=settings.load(),
                volume=VolumeMonitor() if os.name == "nt" else PulseVolume(), games=GameTracker(), discord=DiscordClient(),
-               notifs=WindowsNotifications(), alerts=AlertMonitor(), speedtest=SpeedTest(),
+               notifs=WindowsNotifications() if os.name == "nt" else LinuxNotifications(), alerts=AlertMonitor(), speedtest=SpeedTest(),
                weather=WeatherMonitor(lambda: settings.load()["weather_city"]),
                vpn=VpnMonitor(), lyrics=Lyrics(), usage=ClaudeUsage(), steam=steam,
                achievements=Achievements(steam._steamid),
