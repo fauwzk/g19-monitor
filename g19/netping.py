@@ -2,6 +2,7 @@
 latence / gigue / perte sur la dernière minute, et alerte sur un pic ou des pertes."""
 import collections
 import ctypes
+import os
 import socket
 import statistics
 import struct
@@ -28,6 +29,32 @@ class ICMP_ECHO_REPLY(ctypes.Structure):
                 ("OptionsSize", ctypes.c_ubyte), ("OptionsData", ctypes.c_void_p)]
 
 
+def _checksum(data):
+    if len(data) % 2:
+        data += b"\0"
+    total = sum(struct.unpack(f"!{len(data) // 2}H", data))
+    total = (total >> 16) + (total & 0xFFFF)
+    return ~(total + (total >> 16)) & 0xFFFF
+
+
+def linux_ping(ip, timeout_ms=TIMEOUT_MS, seq=1):
+    """Ping sans droits root (socket ICMP « datagramme » de Linux) : RTT en ms, ou None."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_ICMP) as sock:
+        sock.settimeout(timeout_ms / 1000)
+        payload = b"G19Monitor" * 3
+        head = struct.pack("!BBHHH", 8, 0, 0, 0, seq & 0xFFFF)   # identifiant : le noyau
+        packet = struct.pack("!BBHHH", 8, 0, _checksum(head + payload), 0, seq & 0xFFFF) + payload
+        start = time.perf_counter()
+        sock.sendto(packet, (ip, 0))
+        while True:
+            try:
+                data, _ = sock.recvfrom(1024)
+            except socket.timeout:
+                return None
+            if data and data[0] == 0:                  # réponse d'écho
+                return (time.perf_counter() - start) * 1000
+
+
 class Pinger:
     def __init__(self, target_fn):
         self.target_fn = target_fn
@@ -39,6 +66,8 @@ class Pinger:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
+        if os.name != "nt":
+            return self._run_linux()
         handle = iphlpapi.IcmpCreateFile()
         payload = ctypes.create_string_buffer(b"G19Monitor" * 3)
         reply = ctypes.create_string_buffer(ctypes.sizeof(ICMP_ECHO_REPLY) + len(payload) + 8)
@@ -61,6 +90,31 @@ class Pinger:
                 self.samples.append(float(r.RoundTripTime) if n and r.Status == 0 else None)
                 self.status = ""
             except (OSError, UnicodeError, ValueError):   # nom invalide (idna) compris
+                self.status = f"cible introuvable : {target}"
+                resolved_for = None
+                self.samples.append(None)
+            time.sleep(max(0.0, 1.0 - (time.time() - start)))
+
+    def _run_linux(self):
+        ip, resolved_for, seq = None, None, 0
+        while True:
+            start = time.time()
+            try:
+                target = (self.target_fn() or "1.1.1.1").strip()
+            except Exception:
+                target = resolved_for or "1.1.1.1"
+            try:
+                if target != resolved_for:
+                    ip = socket.gethostbyname(target)
+                    resolved_for, self.target = target, target if target == ip else f"{target} ({ip})"
+                    self.samples.clear()
+                seq += 1
+                self.samples.append(linux_ping(ip, TIMEOUT_MS, seq))
+                self.status = ""
+            except PermissionError:
+                self.status = "ping refusé (net.ipv4.ping_group_range)"
+                self.samples.append(None)
+            except (OSError, UnicodeError, ValueError):
                 self.status = f"cible introuvable : {target}"
                 resolved_for = None
                 self.samples.append(None)
