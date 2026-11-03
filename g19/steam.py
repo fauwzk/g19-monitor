@@ -1,6 +1,7 @@
 """Bibliothèque Steam locale : jeux installés, temps de jeu, pochettes en cache."""
 import re
 import time
+import os
 import winreg
 from pathlib import Path
 
@@ -35,7 +36,14 @@ def ci(d, *keys):
     return d
 
 
+LINUX_ROOTS = (".local/share/Steam", ".steam/steam",
+               ".var/app/com.valvesoftware.Steam/.local/share/Steam")
+
+
 def steam_root():
+    if os.name != "nt":           # Linux : dossier de Steam (natif ou Flatpak)
+        return next((Path.home() / r for r in LINUX_ROOTS
+                     if (Path.home() / r / "steamapps").is_dir()), None)
     try:
         k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam")
         return Path(winreg.QueryValueEx(k, "SteamPath")[0])

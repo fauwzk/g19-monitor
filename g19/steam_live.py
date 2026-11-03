@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import os
 import winreg
 from pathlib import Path
 
@@ -324,6 +325,15 @@ def _read(path):
 
 
 def _reg_dword(path, name):
+    if os.name != "nt":           # Linux : le « registre » de Steam, ~/.steam/registry.vdf
+        from .steam import ci, parse_vdf
+        node = ci(parse_vdf(_read(Path.home() / ".steam" / "registry.vdf")), "Registry")
+        for part in ["HKCU", *path.split("\\"), name]:
+            node = ci(node, part) if isinstance(node, dict) else None
+        try:
+            return int(node) if node is not None else None
+        except (TypeError, ValueError):
+            return None
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as k:
             return winreg.QueryValueEx(k, name)[0]
