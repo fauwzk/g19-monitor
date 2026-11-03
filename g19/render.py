@@ -19,6 +19,7 @@ from . import textcache
 from .smooth import Draw
 
 textcache.install()     # un texte déjà dessiné n'est pas recalculé
+NOTIFS_LABEL = "Notifications Windows" if os.name == "nt" else "Notifications"
 
 # mode sombre à fort contraste : l'écran TFT du G19 écrase les tons proches
 BG = (4, 6, 9)
@@ -3524,7 +3525,7 @@ def page_notifs(img, d, c, t):
             empty_state(d, ICON_LOCK, "Accès aux notifications refusé",
                         "Paramètres → Confidentialité → Notifications", WARN)
         else:
-            empty_state(d, ICON_BELL, "Notifications Windows indisponibles", status)
+            empty_state(d, ICON_BELL, NOTIFS_LABEL + " indisponibles", status)
         return
     items = [n for n in list(wn.items) if not ignored(c, n)]
     dnd = c.dnd if c.dnd and c.dnd.supported else None
@@ -3534,7 +3535,7 @@ def page_notifs(img, d, c, t):
         icon(d, ICON_MOON, 18, 36, 11, ACCENT)
         d.text((30, 36), "Ne pas déranger", font=font(11, True), fill=TEXT, anchor="lm")
     else:
-        d.text((10, 36), "Notifications Windows", font=font(12, True), fill=TEXT, anchor="lm")
+        d.text((10, 36), NOTIFS_LABEL, font=font(12, True), fill=TEXT, anchor="lm")
     key_hints(d, 36, ([("OK", "réactiver" if quiet else "ne pas déranger")] if dnd else [])
               + [("▼", "effacer")], "right")
     if not items:

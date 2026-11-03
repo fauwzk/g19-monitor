@@ -1,7 +1,9 @@
 """Batterie des appareils Bluetooth (casque, manette…) telle que Windows la connaît, lue en
 tâche de fond via PowerShell (propriétés PnP), plus celle des casques HyperX branchés par leur
 dongle USB (g19/headset.py), et alerte quand elle passe sous LOW %."""
+import glob
 import json
+import os
 import re
 import subprocess
 import threading
@@ -62,7 +64,30 @@ class Batteries:
                 self._wake.clear()
                 time.sleep(3)        # le temps que Windows publie le niveau du nouvel appareil
 
+    def _read_linux(self):
+        """Linux : batteries publiées par le noyau (/sys/class/power_supply) : celle du PC
+        portable, et celles des périphériques (souris, manette, casque…)."""
+        devices = []
+        for d in sorted(glob.glob("/sys/class/power_supply/*")):
+            def read(name):
+                try:
+                    with open(os.path.join(d, name)) as f:
+                        return f.read().strip()
+                except OSError:
+                    return ""
+            if read("type") != "Battery" or not read("capacity").isdigit():
+                continue
+            status = read("status")
+            device = read("scope") == "Device"
+            name = (read("model_name") or os.path.basename(d)) if device else "Batterie du PC"
+            devices.append({"name": name, "level": int(read("capacity")), "connected": True,
+                            "charging": status in ("Charging", "Full")})
+        self._bt = devices
+        self._update()
+
     def _read(self):
+        if os.name != "nt":
+            return self._read_linux()
         out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", SCRIPT],
                              capture_output=True, text=True, encoding="utf-8", errors="replace",
                              timeout=60,
