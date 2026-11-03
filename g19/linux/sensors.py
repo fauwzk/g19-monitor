@@ -3,6 +3,8 @@ RTSS n'existent que sous Windows) : mêmes champs, lus dans les capteurs du noya
 /sys/class/hwmon) et la charge GPU dans /sys/class/drm quand le pilote la publie (amdgpu).
 Pas encore de FPS des jeux sous Linux : `game` reste None."""
 import glob
+import subprocess
+import time
 from collections import deque
 
 import psutil
@@ -18,6 +20,24 @@ def _read(path):
             return f.read().strip()
     except OSError:
         return None
+
+
+def gpu_name():
+    """Nom court de la carte graphique (lspci), sinon « GPU »."""
+    try:
+        out = subprocess.run(["lspci", "-mm"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return "GPU"
+    for line in out.splitlines():
+        parts = [p.strip('"') for p in line.split('" "')]
+        if len(parts) > 2 and any(k in parts[0] for k in ("VGA", "3D", "Display")):
+            name = parts[2]
+            if "[" in name and "]" in name:          # « WhiskeyLake-U GT2 [UHD Graphics 620] »
+                name = name[name.index("[") + 1:name.rindex("]")]
+            for prefix in ("AMD Radeon ", "Radeon ", "NVIDIA GeForce ", "GeForce "):
+                name = name.replace(prefix, "")
+            return name.split("/")[0].strip() or "GPU"
+    return "GPU"
 
 
 def cpu_temp(temps):
@@ -46,6 +66,11 @@ class LinuxGpu:
         self._busy = next(iter(sorted(glob.glob("/sys/class/drm/card*/device/gpu_busy_percent"))),
                           None)
         self._vram = self._busy and self._busy.replace("gpu_busy_percent", "mem_info_vram_used")
+        # Intel (i915) : pas de charge publiée ; on la déduit du temps passé en veille (RC6)
+        gt = next(iter(sorted(glob.glob("/sys/class/drm/card*/gt/gt0"))), None)
+        self._rc6 = gt and gt + "/rc6_residency_ms"
+        self._freq = gt and gt + "/rps_act_freq_mhz"
+        self._rc6_last = None
 
     def sample(self, fallback=None):
         s = {}
@@ -83,6 +108,16 @@ class LinuxGpu:
         vram = _read(self._vram) if self._vram else None
         if vram and vram.isdigit():
             s["vram_mb"] = int(vram) / 2**20
+        if self._rc6 and "load" not in s:
+            rc6, now = _read(self._rc6), time.monotonic()
+            if rc6 and rc6.isdigit():
+                if self._rc6_last:
+                    idle = (int(rc6) - self._rc6_last[0]) / max(1.0, (now - self._rc6_last[1]) * 1000)
+                    s["load"] = round(min(100.0, max(0.0, 100 * (1 - idle))), 1)
+                self._rc6_last = (int(rc6), now)
+        freq = _read(self._freq) if self._freq else None
+        if freq and freq.isdigit():
+            s["core_clock"] = float(freq)
         if fallback:
             s.setdefault("load", fallback.gpu)
             s.setdefault("vram_mb", fallback.vram_used / 2**20)

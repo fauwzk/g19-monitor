@@ -127,6 +127,9 @@ class SystemStats:
         self.cpu_name = _cpu_name()
         gpu_name, self.vram_total = _gpu_info()
         self.gpu_name = _short_gpu(gpu_name)
+        if platform.system() == "Linux":
+            from .linux.sensors import gpu_name as _linux_gpu
+            self.gpu_name = _linux_gpu()
         self.cpu_hist = deque([0.0] * self.HISTORY, maxlen=self.HISTORY)
         self.gpu_hist = deque([0.0] * self.HISTORY, maxlen=self.HISTORY)
         self.cpu = 0.0
