@@ -1,7 +1,7 @@
 """Capteurs sous Linux, à la place de gpu.GpuMonitor (Afterburner, LibreHardwareMonitor et
 RTSS n'existent que sous Windows) : mêmes champs, lus dans les capteurs du noyau (psutil,
 /sys/class/hwmon) et la charge GPU dans /sys/class/drm quand le pilote la publie (amdgpu).
-Pas encore de FPS des jeux sous Linux : `game` reste None."""
+Jeux : détectés via Steam (linux/games.py), sans FPS."""
 import glob
 import subprocess
 import time
@@ -127,7 +127,13 @@ class LinuxGpu:
         self.temp_max = max(self.temp_max, s.get("hotspot", s.get("temp", 0.0)))
 
     def sample_fps(self):
-        return None
+        """Jeu Steam en cours (sans FPS sous Linux), pour la page GPU et les sessions."""
+        from .games import current_game
+        game = current_game()
+        if game and (not self.game or self.game["pid"] != game["pid"]):
+            self.fps_hist.clear()
+        self.game = game
+        return game
 
     def sample_frametime(self):
         pass

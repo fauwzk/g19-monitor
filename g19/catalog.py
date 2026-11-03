@@ -132,6 +132,8 @@ class GameCatalog:
 
     def identify(self, exe_path, exe_name):
         """{name, launcher, steam_appid} pour un exe de jeu."""
+        if str(exe_path).startswith("steam:"):    # Linux : jeu reconnu par son SteamAppId
+            return {"name": exe_name, "launcher": "Steam", "steam_appid": str(exe_path)[6:]}
         self.ready.wait(5)
         p = str(Path(exe_path)).lower()
         if self.steam:
