@@ -8,7 +8,10 @@ import ctypes
 import io
 import json
 import re
-import msvcrt
+try:
+    import msvcrt          # canal nommé de Discord (Windows)
+except ImportError:
+    msvcrt = None
 import queue
 import struct
 import threading

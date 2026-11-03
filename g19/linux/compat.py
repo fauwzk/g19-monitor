@@ -18,7 +18,7 @@ class _Fn:
 
 
 class _Dll:
-    def __init__(self, name=""):
+    def __init__(self, name="", *args, **kw):     # WinDLL("x", use_last_error=True)
         self._name = name
         self._fns = {}
 
@@ -77,4 +77,4 @@ def install():
               "REG_SZ": 1, "REG_EXPAND_SZ": 2, "REG_BINARY": 3, "REG_DWORD": 4,
               "REG_MULTI_SZ": 7, "REG_QWORD": 11}
     sys.modules.setdefault("winreg", _module("winreg", **hkeys, **consts))
-    sys.modules.setdefault("msvcrt", _module("msvcrt"))
+    # pas de faux msvcrt : Python (subprocess) s'en sert pour savoir s'il est sous Windows
