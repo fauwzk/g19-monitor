@@ -8,7 +8,10 @@ if os.name != "nt":
     # Linux : icône StatusNotifier (AppIndicator), la seule que Plasma / GNOME affichent sous
     # Wayland ; le moteur X11 de pystray y serait invisible
     os.environ.setdefault("PYSTRAY_BACKEND", "appindicator")
-import pystray  # noqa: E402
+try:
+    import pystray  # noqa: E402
+except ImportError:   # pas de pystray, ou pas d'affichage : make_icon reste utilisable
+    pystray = None
 from PIL import Image, ImageDraw
 
 from . import instance
@@ -140,3 +143,7 @@ def _open(path):
         os.startfile(path)
     else:
         subprocess.Popen(["xdg-open", str(path)], start_new_session=True)
+
+
+if pystray is None:   # l'appli tourne sans icône (même interface)
+    from .linux.notray import Tray  # noqa: E402,F811
