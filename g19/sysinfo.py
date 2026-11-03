@@ -103,6 +103,11 @@ def _cpu_name():
         name = winreg.QueryValueEx(k, "ProcessorNameString")[0]
     except OSError:
         name = platform.processor()
+        try:                    # Linux : « model name » de /proc/cpuinfo
+            with open("/proc/cpuinfo") as f:
+                name = next((l.split(":", 1)[1] for l in f if l.startswith("model name")), name)
+        except OSError:
+            pass
     name = re.sub(r"\(R\)|\(TM\)|CPU|Processor|\d+-Core|@.*", "", name, flags=re.I)
     return " ".join(name.replace("AMD ", "").replace("Intel ", "").split())
 

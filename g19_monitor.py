@@ -82,6 +82,8 @@ try:
     from g19.games import GameTracker
     from g19.fans import FanControl
     from g19.gpu import GpuMonitor
+    if os.name != "nt":
+        from g19.linux.sensors import LinuxGpu
     from g19.lyrics import Lyrics
     from g19.media import MediaMonitor
     from g19.notifications import WindowsNotifications, flash_kind
@@ -156,7 +158,7 @@ def setup_logging():
 def make_ctx():
     batteries = Batteries()
     steam = SteamLive()
-    return Ctx(stats=SystemStats(), gpu=GpuMonitor(), sessions=[], settings=settings.load(),
+    return Ctx(stats=SystemStats(), gpu=GpuMonitor() if os.name == "nt" else LinuxGpu(), sessions=[], settings=settings.load(),
                volume=VolumeMonitor(), games=GameTracker(), discord=DiscordClient(),
                notifs=WindowsNotifications(), alerts=AlertMonitor(), speedtest=SpeedTest(),
                weather=WeatherMonitor(lambda: settings.load()["weather_city"]),
