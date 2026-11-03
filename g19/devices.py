@@ -3,6 +3,7 @@ fenêtre invisible (WM_DEVICECHANGE), on retrouve le nom de l'appareil, et sa ba
 a une (via battery.Batteries)."""
 import ctypes
 import json
+import os
 import re
 import subprocess
 import threading
@@ -98,6 +99,8 @@ class DeviceWatcher:
     # --- fenêtre invisible qui reçoit les arrivées d'appareils ---
 
     def _window(self):
+        if os.name != "nt":           # fenêtre de messages Windows : rien à écouter ailleurs
+            return
         hinst = kernel32.GetModuleHandleW(None)
         wc = WNDCLASSW(lpfnWndProc=self._proc, hInstance=hinst, lpszClassName="G19DeviceWatch")
         user32.RegisterClassW(ctypes.byref(wc))
