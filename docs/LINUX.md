@@ -32,12 +32,15 @@ L'appli se relance d'elle-même quand son code change (git pull, envoi depuis Wi
 
 ## Ce qui marche, ce qui manque
 
-Marche : écran et touches du G19, toutes les pages et les thèmes, CPU / RAM / disques / réseau,
-températures et ventilateur (capteurs du noyau), Claude Code, Steam (Web), Home Assistant,
-agenda, météo, bilan du jour, mises en page, bandeaux.
+Marche : écran et touches du G19, toutes les pages et les thèmes (fond d'écran du bureau KDE ou
+GNOME compris), CPU / RAM / disques / réseau, températures et ventilateur (capteurs du noyau),
+ping, batterie du PC et des périphériques, musique en cours et ses commandes (MPRIS : Spotify,
+navigateurs, VLC…), volume / micro / volume par appli / sortie et entrée par défaut (PulseAudio
+ou PipeWire via pactl), notifications du bureau (D-Bus), Claude Code, Steam (Web), Home
+Assistant, agenda, météo, bilan du jour, bandeaux.
 
-Pas encore : musique en cours (MPRIS), volume (PipeWire), notifications (D-Bus), ping, batterie,
-rétroéclairage du clavier, icône de la barre des tâches, utilitaire de réglage, FPS des jeux,
+Pas encore : rétroéclairage du clavier, Discord, « Ne pas déranger », écran de repos (PC
+inactif ou verrouillé), icône de la barre des tâches, utilitaire de réglage, FPS des jeux,
 démarrage avec la session. Les icônes Segoe sont remplacées par des symboles Unicode.
 
 Sous le capot : `g19/linux/compat.py` fournit de fausses versions de `winreg` et des DLL
