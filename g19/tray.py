@@ -4,7 +4,11 @@ import queue
 import subprocess
 import sys
 
-import pystray
+if os.name != "nt":
+    # Linux : icône StatusNotifier (AppIndicator), la seule que Plasma / GNOME affichent sous
+    # Wayland ; le moteur X11 de pystray y serait invisible
+    os.environ.setdefault("PYSTRAY_BACKEND", "appindicator")
+import pystray  # noqa: E402
 from PIL import Image, ImageDraw
 
 from . import instance
