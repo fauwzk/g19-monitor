@@ -326,6 +326,11 @@ def _read(path):
 
 def _reg_dword(path, name):
     if os.name != "nt":           # Linux : le « registre » de Steam, ~/.steam/registry.vdf
+        if path.endswith("ActiveProcess") and name == "pid":
+            # le Steam Linux récent ne l'y écrit plus : son processus fait foi
+            import psutil
+            return next((p.info["pid"] for p in psutil.process_iter(["pid", "name"])
+                         if p.info["name"] == "steam"), 0)
         from .steam import ci, parse_vdf
         node = ci(parse_vdf(_read(Path.home() / ".steam" / "registry.vdf")), "Registry")
         for part in ["HKCU", *path.split("\\"), name]:
