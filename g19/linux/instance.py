@@ -100,13 +100,36 @@ def wait_exit(pid, timeout=15):
         time.sleep(0.1)
 
 
+def in_service():
+    """Lancée par le service systemd du gardien (g19-monitor.service) ? INVOCATION_ID ne suffit
+    pas : Plasma lance terminal et applis sous systemd, elles en héritent."""
+    try:
+        with open("/proc/self/cgroup") as f:
+            return "/g19-monitor.service" in f.read()
+    except OSError:
+        return False
+
+
+def _reap_children():
+    """Enfants (pactl, busctl…) arrêtés et ramassés : pas de zombies après execve."""
+    import psutil
+    kids = psutil.Process().children()
+    for k in kids:
+        try:
+            k.terminate()
+        except psutil.Error:
+            pass
+    psutil.wait_procs(kids, timeout=2)
+
+
 def popen(args, cwd, env=None):
-    if os.environ.get("INVOCATION_ID") and args and str(args[0]).endswith("g19_monitor.py"):
-        # lancée par systemd (le gardien) : relance en place, même processus pour le service
+    if in_service() and args and str(args[0]).endswith("g19_monitor.py"):
+        # lancée par le gardien (systemd) : relance en place, même processus pour le service
         env = dict(env or os.environ)
         env.pop("G19_WAIT_PID", None)
         import logging
         logging.shutdown()
+        _reap_children()
         os.chdir(cwd)
         os.execve(sys.executable, [sys.executable, *map(str, args)], env)
     subprocess.Popen([sys.executable, *args], cwd=cwd, env=env, start_new_session=True,
