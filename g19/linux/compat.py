@@ -69,6 +69,13 @@ def install():
             setattr(ctypes, fn, lambda *a: 0)
     if not hasattr(ctypes, "FormatError"):
         ctypes.FormatError = lambda code=None: NOT_HERE
+    # options Windows de subprocess (console cachée, processus détaché) : 0 sous Linux, où
+    # Popen accepte creationflags=0
+    import subprocess
+    for flag in ("CREATE_NO_WINDOW", "DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP",
+                 "CREATE_NEW_CONSOLE", "BELOW_NORMAL_PRIORITY_CLASS", "IDLE_PRIORITY_CLASS"):
+        if not hasattr(subprocess, flag):
+            setattr(subprocess, flag, 0)
     hkeys = {k: 0x80000000 + i for i, k in enumerate(
         ("HKEY_CLASSES_ROOT", "HKEY_CURRENT_USER", "HKEY_LOCAL_MACHINE", "HKEY_USERS",
          "HKEY_PERFORMANCE_DATA", "HKEY_CURRENT_CONFIG"))}
