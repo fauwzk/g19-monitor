@@ -16,7 +16,7 @@ WIN_TO_FC = {
     "framd.ttf": "DejaVu Sans Condensed:bold",
     "CascadiaMono.ttf": "DejaVu Sans Mono",
     "seguisym.ttf": "DejaVu Sans",
-    "seguiemj.ttf": "Noto Emoji",
+    "seguiemj.ttf": "Noto Color Emoji",
     "YuGothM.ttc": "Noto Sans CJK JP", "YuGothB.ttc": "Noto Sans CJK JP:bold",
     "msyh.ttc": "Noto Sans CJK SC", "msyhbd.ttc": "Noto Sans CJK SC:bold",
     "msjh.ttc": "Noto Sans CJK TC", "msjhbd.ttc": "Noto Sans CJK TC:bold",

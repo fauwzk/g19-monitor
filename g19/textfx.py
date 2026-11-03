@@ -20,6 +20,41 @@ if os.name != "nt":           # Linux : équivalents libres (Noto, DejaVu) via f
     FONTS_DIR = ""
 
 
+# Linux : Noto Color Emoji n'existe qu'en une taille (109 px, images en couleur) : chaque
+# émoji y est dessiné puis réduit à la taille du texte (BITMAP_EMOJI)
+BITMAP_EMOJI = os.name != "nt" and "color" in EMOJI_FONT.lower()
+BITMAP_SIZE = 109
+
+
+@lru_cache(maxsize=1)
+def _bitmap_font():
+    return ImageFont.truetype(EMOJI_FONT, BITMAP_SIZE)
+
+
+@lru_cache(maxsize=2048)
+def _bitmap_emoji(ch, size):
+    """Émoji en couleur (RGBA) à la hauteur `size` px, ou None."""
+    from PIL import Image
+    try:
+        f = _bitmap_font()
+        w = max(1, int(f.getlength(ch)))
+        img = Image.new("RGBA", (w, BITMAP_SIZE + 30), (0, 0, 0, 0))
+        ImageDraw.Draw(img).text((0, 0), ch, font=f, embedded_color=True)
+        box = img.getbbox()
+        if not box:
+            return None
+        img = img.crop((0, box[1], w, box[3]))
+        k = size / max(1, img.height)
+        return img.resize((max(1, round(img.width * k)), max(1, round(img.height * k))),
+                          Image.LANCZOS)
+    except (OSError, ValueError):
+        return None
+
+
+def _emoji_size(font):
+    return max(6, round(font.size * EMOJI_SCALE))
+
+
 def _script_file(name):
     """Fichier d'une police de secours (écritures non latines)."""
     return FONTS_DIR + name if os.name == "nt" else (_fonts.path(name) or "")
@@ -145,11 +180,18 @@ def _font_of(kind, font):
     return font if kind == "main" else (_fallback(kind, font.size, _bold(font)) or font)
 
 
+def _part_length(self, part, kind, font):
+    if kind == "emoji" and BITMAP_EMOJI:
+        return sum((e.width + 1) if (e := _bitmap_emoji(ch, _emoji_size(font))) else 0
+                   for ch in part)
+    return _orig_length(self, part, _font_of(kind, font))
+
+
 def textlength(self, text, font=None, *args, **kwargs):
     runs = _split(text, font) if font is not None else None
     if runs is None:
         return _orig_length(self, text, font, *args, **kwargs)
-    return sum(_orig_length(self, part, _font_of(kind, font)) for part, kind in runs)
+    return sum(_part_length(self, part, kind, font) for part, kind in runs)
 
 
 def text(self, xy, text, fill=None, font=None, anchor=None, *args, **kwargs):
@@ -157,7 +199,7 @@ def text(self, xy, text, fill=None, font=None, anchor=None, *args, **kwargs):
     if runs is None:
         return _orig_text(self, xy, text, fill, font, anchor, *args, **kwargs)
     anchor = anchor or "la"
-    widths = [_orig_length(self, part, _font_of(kind, font)) for part, kind in runs]
+    widths = [_part_length(self, part, kind, font) for part, kind in runs]
     x, y = xy
     x -= {"l": 0, "m": sum(widths) / 2, "r": sum(widths)}.get(anchor[0], 0)
     # tous les morceaux sur la ligne de base du texte principal (les polices de secours ont
@@ -166,6 +208,18 @@ def text(self, xy, text, fill=None, font=None, anchor=None, *args, **kwargs):
     for (part, kind), w in zip(runs, widths):
         f = _font_of(kind, font)
         extra = dict(kwargs)
+        if kind == "emoji" and BITMAP_EMOJI:
+            # posé sur la ligne de base, un peu sous elle comme un caractère
+            size = _emoji_size(font)
+            ex = x
+            for ch in part:
+                e = _bitmap_emoji(ch, size)
+                if e is not None and self.im.mode in ("RGB", "RGBA"):
+                    top = int(round(y - e.height + size * 0.12))
+                    self._image.paste(e, (int(round(ex)), top), e)
+                    ex += e.width + 1
+            x += w
+            continue
         if kind == "emoji" and self.im.mode in ("RGB", "RGBA"):
             extra["embedded_color"] = True
             mode, self.fontmode = self.fontmode, "L"   # thème Pixel : lissage coupé ailleurs
