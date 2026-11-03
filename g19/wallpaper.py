@@ -1,5 +1,6 @@
-"""Fond d'écran Windows, recadré à la taille du G19 et flouté, pour le fond des pages (réglage
-« fond d'écran » ou thème Aero). Relu quand Windows change de fond (diaporama compris)."""
+"""Fond d'écran Windows (ou du bureau Linux : KDE, GNOME), recadré à la taille du G19 et flouté,
+pour le fond des pages (réglage « fond d'écran » ou thème Aero). Relu quand le fond change
+(diaporama compris)."""
 import ctypes
 import os
 import time
@@ -15,7 +16,53 @@ TRANSCODED = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Th
 _state = {"checked": 0.0, "key": None, "img": None}
 
 
+KDE_CONFIG = Path.home() / ".config" / "plasma-org.kde.plasma.desktop-appletsrc"
+
+
+def _image_file(value):
+    """Fichier image d'un réglage de bureau : chemin, file://…, ou dossier de thème KDE
+    (contents/images/*, la plus grande)."""
+    value = (value or "").strip().strip("'\"")
+    if value.startswith("file://"):
+        from urllib.parse import unquote
+        value = unquote(value[7:])
+    p = Path(value) if value else None
+    if p and p.is_dir():
+        images = [f for f in (p / "contents" / "images").glob("*")
+                  if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+        p = max(images, key=lambda f: f.stat().st_size) if images else None
+    return p if p and p.is_file() else None
+
+
+def _linux_path():
+    """Fond d'écran sous Linux : KDE Plasma (sa config), sinon GNOME (gsettings)."""
+    try:
+        section = ""
+        for line in KDE_CONFIG.read_text("utf-8", "replace").splitlines():
+            if line.startswith("["):
+                section = line
+            elif line.startswith("Image=") and "[org.kde.image][General]" in section:
+                p = _image_file(line[6:])
+                if p:
+                    return p
+    except OSError:
+        pass
+    import subprocess
+    for key in ("picture-uri-dark", "picture-uri"):
+        try:
+            out = subprocess.run(["gsettings", "get", "org.gnome.desktop.background", key],
+                                 capture_output=True, text=True, timeout=3).stdout
+        except (OSError, subprocess.SubprocessError):
+            break
+        p = _image_file(out)
+        if p:
+            return p
+    return None
+
+
 def _path():
+    if os.name != "nt":
+        return _linux_path()
     buf = ctypes.create_unicode_buffer(520)
     if ctypes.windll.user32.SystemParametersInfoW(SPI_GETDESKWALLPAPER, len(buf), buf, 0):
         p = Path(buf.value)
