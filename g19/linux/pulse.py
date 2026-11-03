@@ -2,8 +2,10 @@
 PipeWire). Même interface que volume.VolumeMonitor : la page Audio, la fenêtre de volume et
 les profils audio s'en servent tels quels. `pactl subscribe` signale chaque changement, la
 fenêtre de volume réagit donc aussitôt."""
+import ctypes
 import json
 import queue
+import signal
 import subprocess
 import threading
 import time
@@ -11,6 +13,15 @@ import time
 from ..volume import STEP, _find, _short, active_profile
 
 REFRESH = 2.0              # s entre deux relectures complètes (sans événement)
+
+
+def _die_with_parent():
+    """Dans le processus enfant : il meurt avec l'appli (sinon `pactl subscribe` resterait
+    orphelin à chaque relance)."""
+    try:
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)   # PR_SET_PDEATHSIG
+    except OSError:
+        pass
 
 
 def _pactl(*args, timeout=3):
@@ -75,7 +86,9 @@ class PulseVolume:
     def _subscribe(self):
         while True:
             try:
-                p = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE, text=True)
+                p = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE, text=True,
+                                     stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     preexec_fn=_die_with_parent)
                 for line in p.stdout:
                     if "'change'" in line or "'new'" in line or "'remove'" in line:
                         self._dirty.set()
