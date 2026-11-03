@@ -85,20 +85,26 @@ def _font_file(family):
     return out[0] if len(out) > 1 and family.lower() in out[1].lower() else None
 
 
+def _drawn(file, ch):
+    from PIL import Image, ImageDraw
+    img = Image.new("L", (40, 40), 0)
+    ImageDraw.Draw(img).text((6, 6), ch, font=ImageFont.truetype(file, 24), fill=255)
+    return img
+
+
 @lru_cache(maxsize=None)
 def _notdef(file):
     """Dessin du carré « caractère absent » de la police (sans fontTools : Pillow seul)."""
-    f = ImageFont.truetype(file, 24)
-    return f.getmask("\U0010FFFD").tobytes()
+    return _drawn(file, "\U0010FFFD").tobytes()
 
 
 @lru_cache(maxsize=None)
 def _has(file, ch):
     try:
-        mask = ImageFont.truetype(file, 24).getmask(ch)
+        img = _drawn(file, ch)
     except OSError:
         return False
-    return bool(mask.getbbox()) and mask.tobytes() != _notdef(file)
+    return bool(img.getbbox()) and img.tobytes() != _notdef(file)
 
 
 @lru_cache(maxsize=None)
