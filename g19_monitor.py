@@ -104,6 +104,8 @@ try:
     except ImportError:          # pas de pystray (Linux) : pas d'icône, le reste marche
         from g19.linux.notray import Tray, open_config
     from g19.volume import VolumeMonitor
+    if os.name != "nt":          # Linux : PulseAudio / PipeWire (pactl)
+        from g19.linux.pulse import PulseVolume
     from g19.vpn import VpnMonitor
     from g19.weather import WeatherMonitor
 except Exception:
@@ -161,7 +163,7 @@ def make_ctx():
     batteries = Batteries()
     steam = SteamLive()
     return Ctx(stats=SystemStats(), gpu=GpuMonitor() if os.name == "nt" else LinuxGpu(), sessions=[], settings=settings.load(),
-               volume=VolumeMonitor(), games=GameTracker(), discord=DiscordClient(),
+               volume=VolumeMonitor() if os.name == "nt" else PulseVolume(), games=GameTracker(), discord=DiscordClient(),
                notifs=WindowsNotifications(), alerts=AlertMonitor(), speedtest=SpeedTest(),
                weather=WeatherMonitor(lambda: settings.load()["weather_city"]),
                vpn=VpnMonitor(), lyrics=Lyrics(), usage=ClaudeUsage(), steam=steam,
