@@ -9,7 +9,12 @@ try:
 except ImportError:   # pas de Tk (Linux sans tk) : les palettes servent encore à l'utilitaire Qt
     tk = tkfont = ttk = None
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw
+
+try:
+    from PIL import ImageTk
+except ImportError:   # idem : ImageTk a besoin de Tk
+    ImageTk = None
 
 
 def hexa(c):
