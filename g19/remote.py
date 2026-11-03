@@ -2,6 +2,7 @@
 %LOCALAPPDATA%\\G19Monitor) et affiche en direct l'écran du G19, copié dans une mémoire
 partagée (pas de fichier : jusqu'à 60 images/s sans écrire sur le disque)."""
 import mmap
+import os
 import struct
 import time
 
@@ -23,9 +24,23 @@ STATS_NAME = "G19MonitorStats"       # mémoire partagée : fluidité réelle du
 STATS_HEAD = struct.Struct("<ddd")   # horodatage, images/s envoyées au G19, réglage
 
 
+def _named_mmap(name, size):
+    """Mémoire partagée nommée : par son nom sous Windows, un fichier de /dev/shm ailleurs."""
+    if os.name == "nt":
+        return mmap.mmap(-1, size, tagname=name)
+    path = f"/dev/shm/{name}-{os.getuid()}"
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if os.fstat(fd).st_size < size:
+            os.ftruncate(fd, size)
+        return mmap.mmap(fd, size)
+    finally:
+        os.close(fd)
+
+
 def _stats_mem():
     try:
-        return mmap.mmap(-1, STATS_HEAD.size, tagname=STATS_NAME)
+        return _named_mmap(STATS_NAME, STATS_HEAD.size)
     except (OSError, ValueError):
         return None
 
@@ -56,7 +71,7 @@ def read_fps(max_age=5):
 def _shared():
     """Mémoire partagée de l'aperçu (créée par le premier des deux processus qui l'ouvre)."""
     try:
-        return mmap.mmap(-1, MIRROR_SIZE, tagname=MIRROR_NAME)
+        return _named_mmap(MIRROR_NAME, MIRROR_SIZE)
     except (OSError, ValueError):
         return None
 
