@@ -15,7 +15,10 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFo
 from .lcd import W, H
 from .settings import PAGE_TITLES
 from . import smooth
+from . import textcache
 from .smooth import Draw
+
+textcache.install()     # un texte déjà dessiné n'est pas recalculé
 
 # mode sombre à fort contraste : l'écran TFT du G19 écrase les tons proches
 BG = (4, 6, 9)
