@@ -39,9 +39,29 @@ def open_guard():
 
 
 def open_config():
+    if os.name != "nt":
+        subprocess.Popen([sys.executable, str(instance.APP_DIR / "config_g19.pyw")],
+                         cwd=instance.APP_DIR, start_new_session=True)
+        return
     exe = sys.executable.replace("python.exe", "pythonw.exe")
     subprocess.Popen([exe, str(instance.APP_DIR / "config_g19.pyw")], cwd=instance.APP_DIR,
                      creationflags=subprocess.DETACHED_PROCESS)
+
+
+def _guard_item():
+    """Windows : panneau du gardien. Linux : le gardien est un service systemd, une case
+    l'active (démarrage avec la session, relance en cas de plantage)."""
+    if os.name == "nt":
+        return pystray.MenuItem("Gardien…", lambda: open_guard())
+    from .linux import service
+
+    state = {"on": service.enabled()}
+
+    def toggle():
+        state["on"] = not state["on"]
+        service.set_enabled(state["on"])
+
+    return pystray.MenuItem("Démarrage auto et gardien", toggle, checked=lambda _: state["on"])
 
 
 class Tray:
@@ -77,7 +97,7 @@ class Tray:
                              visible=lambda _: bool(self.profiles)),
             pystray.MenuItem("Lancer un test de débit", lambda: self.commands.put(("speedtest",))),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Gardien…", lambda: open_guard()),
+            _guard_item(),
             pystray.MenuItem("Journal", lambda: _open(instance.APP_DIR / "g19.log")),
             pystray.MenuItem("Redémarrer", lambda: self.commands.put(("restart",))),
             pystray.MenuItem("Quitter", lambda: self.commands.put(("quit",))),
@@ -106,5 +126,9 @@ class Tray:
 
 
 def _open(path):
-    if path.exists():
+    if not path.exists():
+        return
+    if os.name == "nt":
         os.startfile(path)
+    else:
+        subprocess.Popen(["xdg-open", str(path)], start_new_session=True)

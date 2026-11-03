@@ -1,6 +1,7 @@
 """Briques Qt de l'utilitaire (config_g19.pyw) : feuille de style tirée des palettes du G19,
 interrupteur, pastille de couleur, cartes de réglages et liaison champ ↔ réglage."""
 import ctypes
+import os
 import tempfile
 from pathlib import Path
 
@@ -177,9 +178,14 @@ def glyph_icon(char, normal, selected, size=18):
         qp = QPainter(px)
         qp.setRenderHint(QPainter.Antialiasing)
         qp.setRenderHint(QPainter.TextAntialiasing)
-        f = QFont("Segoe Fluent Icons")
-        if not f.exactMatch():
-            f = QFont("Segoe MDL2 Assets")
+        if os.name == "nt":
+            f = QFont("Segoe Fluent Icons")
+            if not f.exactMatch():
+                f = QFont("Segoe MDL2 Assets")
+        else:                     # Linux : symbole Unicode proche (g19/linux/fonts.py)
+            from .linux import fonts
+            char = fonts.icon_glyph(char)[0]
+            f = QFont("DejaVu Sans")
         f.setPixelSize(int(size * 1.55))
         qp.setFont(f)
         qp.setPen(QColor(*color))

@@ -16,6 +16,10 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(APP_DIR))
 os.chdir(APP_DIR)
+if os.name != "nt":
+    # Linux : fausses versions de winreg et des DLL Windows, avant le paquet g19
+    from g19.linux import compat as _compat
+    _compat.install()
 
 from PIL import Image  # noqa: E402
 from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal  # noqa: E402
@@ -1316,6 +1320,11 @@ class ConfigApp(QMainWindow):
         self._flash({"start": "Démarrage…", "restart": "Redémarrage…", "stop": "Arrêt…"}[action])
 
     def _open_guard(self):
+        if os.name != "nt":       # Linux : le gardien est le service systemd
+            from g19.linux import service
+            on = not service.enabled()
+            service.set_enabled(on)
+            return self._flash("Démarrage auto et gardien : " + ("activés" if on else "désactivés"))
         exe = sys.executable.replace("python.exe", "pythonw.exe")
         subprocess.Popen([exe, str(APP_DIR / "config_guard.pyw")], cwd=APP_DIR,
                          creationflags=subprocess.DETACHED_PROCESS)
@@ -1331,8 +1340,12 @@ class ConfigApp(QMainWindow):
 
     @staticmethod
     def _open(path):
-        if Path(path).exists():
+        if not Path(path).exists():
+            return
+        if os.name == "nt":
             os.startfile(path)
+        else:
+            subprocess.Popen(["xdg-open", str(path)], start_new_session=True)
 
     def _export_backup(self):
         path, _ = QFileDialog.getSaveFileName(

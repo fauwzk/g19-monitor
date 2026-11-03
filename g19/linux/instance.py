@@ -101,6 +101,14 @@ def wait_exit(pid, timeout=15):
 
 
 def popen(args, cwd, env=None):
+    if os.environ.get("INVOCATION_ID") and args and str(args[0]).endswith("g19_monitor.py"):
+        # lancée par systemd (le gardien) : relance en place, même processus pour le service
+        env = dict(env or os.environ)
+        env.pop("G19_WAIT_PID", None)
+        import logging
+        logging.shutdown()
+        os.chdir(cwd)
+        os.execve(sys.executable, [sys.executable, *map(str, args)], env)
     subprocess.Popen([sys.executable, *args], cwd=cwd, env=env, start_new_session=True,
                      close_fds=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL)

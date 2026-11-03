@@ -60,6 +60,8 @@ try:
     from g19.docker_mon import DockerMonitor
     from g19.fuel import FuelMonitor
     from g19.dnd import DoNotDisturb
+    if os.name != "nt":          # Linux : Inhibited / Inhibit du serveur de notifications
+        from g19.linux.dnd import LinuxDnd
     from g19.agenda import Agenda
     from g19.home import Home
     from g19.daily import DayLog
@@ -174,7 +176,7 @@ def make_ctx():
                net=Pinger(lambda: settings.current().get("ping_target")),
                sysw=SystemWatch(settings.current), git=GitStatus(), away=Away(),
                streaming=Streaming(), docker=DockerMonitor(), mirror=ScreenMirror(),
-               fuel=FuelMonitor(), dnd=DoNotDisturb(),
+               fuel=FuelMonitor(), dnd=DoNotDisturb() if os.name == "nt" else LinuxDnd(),
                agenda=Agenda(lambda: settings.current().get("agenda_remind", 10)),
                home=Home(lambda: settings.current().get("ha_entities") or []),
                daily=DayLog(),

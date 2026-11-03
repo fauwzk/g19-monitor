@@ -2,6 +2,7 @@
 alors sur une grande horloge, et tout ce qui arrive pendant l'absence (messages, amis,
 agents Claude, téléchargements…) est noté pour un résumé au retour."""
 import ctypes
+import os
 import time
 from ctypes import wintypes
 
@@ -172,3 +173,7 @@ class Away:
         for it in self.items:
             out[it["source"]] = out.get(it["source"], 0) + 1
         return out
+
+
+if os.name != "nt":   # Linux : verrouillage et inactivité via D-Bus (KDE, GNOME, logind)
+    from .linux.session import display_required, idle_seconds, is_locked   # noqa: F811

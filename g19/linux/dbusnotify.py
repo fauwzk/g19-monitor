@@ -1,15 +1,20 @@
-"""Notifications du bureau sous Linux : l'appli observe (BecomeMonitor) les appels Notify
-envoyés à org.freedesktop.Notifications sur le bus de session. Elle n'intercepte rien : la
-notification s'affiche comme d'habitude, l'appli en reçoit une copie. Même interface que
-notifications.WindowsNotifications (items, last_time, status, clear)."""
+"""Notifications du bureau sous Linux : `busctl monitor` observe les appels Notify envoyés à
+org.freedesktop.Notifications sur le bus de session (un message JSON par ligne). L'appli
+n'intercepte rien : la notification s'affiche comme d'habitude, elle en reçoit une copie.
+Processus à part, pas de boucle GLib (celle de l'icône de la barre des tâches suffit).
+Même interface que notifications.WindowsNotifications (items, last_time, status, clear)."""
 import html
+import json
 import re
+import subprocess
 import threading
 import time
 from collections import deque
 
-RULE = "type='method_call',interface='org.freedesktop.Notifications',member='Notify'"
-IGNORED = {"g19 monitor", "notify-send-test"}
+from .pulse import _die_with_parent
+
+MATCH = "type=method_call,interface=org.freedesktop.Notifications,member=Notify"
+IGNORED = {"g19 monitor"}
 
 
 def _plain(text):
@@ -27,14 +32,11 @@ class LinuxNotifications:
     def clear(self):
         self.items.clear()
 
-    def _on_message(self, _bus, msg):
-        try:
-            args = msg.get_args_list()
-        except Exception:
-            return
+    def _add(self, args):
         if len(args) < 5:
             return
-        app, _replaces, _icon, summary, body = (str(a) for a in args[:5])
+        app, _replaces, _icon, summary, body = (args[0], args[1], args[2], args[3], args[4])
+        app = str(app or "")
         if not (summary or body) or app.casefold() in IGNORED:
             return
         now = time.time()
@@ -44,24 +46,21 @@ class LinuxNotifications:
         self.last_time = now
 
     def _run(self):
-        try:
-            import dbus
-            from dbus.mainloop.glib import DBusGMainLoop
-            from gi.repository import GLib
-        except ImportError as e:
-            self.status = f"indisponible ({e.name})"
-            return
         while True:
             try:
-                loop = DBusGMainLoop()
-                # bus privé : l'observateur ne peut plus rien envoyer, on ne gêne pas MPRIS
-                bus = dbus.SessionBus(mainloop=loop, private=True)
-                monitor = bus.get_object("org.freedesktop.DBus", "/org/freedesktop/DBus")
-                monitor.BecomeMonitor([RULE], dbus.UInt32(0),
-                                      dbus_interface="org.freedesktop.DBus.Monitoring")
-                bus.add_message_filter(self._on_message)
+                p = subprocess.Popen(["busctl", "--user", "monitor", "--json=short",
+                                      "--match", MATCH], stdout=subprocess.PIPE,
+                                     stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     text=True, preexec_fn=_die_with_parent)
                 self.status = "ok"
-                GLib.MainLoop().run()
-            except Exception as e:
-                self.status = f"erreur : {e.__class__.__name__}"
+                for line in p.stdout:
+                    try:
+                        msg = json.loads(line)
+                    except ValueError:
+                        continue
+                    if msg.get("member") == "Notify":
+                        self._add((msg.get("payload") or {}).get("data") or [])
+                self.status = "busctl s'est arrêté"
+            except OSError as e:
+                self.status = f"indisponible ({e.__class__.__name__})"
             time.sleep(10)
