@@ -2,9 +2,12 @@
 sombre, clair et « G19 » (chrome et bleu façon 2010). `apply()` peut être rappelé à chaud :
 les styles ttk sont refaits et les widgets tk inscrits avec `paint()` sont recolorés."""
 import ctypes
-import tkinter as tk
-from tkinter import font as tkfont
-from tkinter import ttk
+try:
+    import tkinter as tk
+    from tkinter import font as tkfont
+    from tkinter import ttk
+except ImportError:   # pas de Tk (Linux sans tk) : les palettes servent encore à l'utilitaire Qt
+    tk = tkfont = ttk = None
 
 from PIL import Image, ImageDraw, ImageTk
 
@@ -184,7 +187,7 @@ def header_image(width, height):
     return img
 
 
-class HeaderBar(tk.Canvas):
+class HeaderBar(tk.Canvas if tk else object):
     """Bandeau du haut : logo, titre, sous-titre, état de l'appli à droite ; suit le thème."""
 
     def __init__(self, master, title, subtitle, height=52):
