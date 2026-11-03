@@ -86,12 +86,19 @@ def _font_file(family):
 
 
 @lru_cache(maxsize=None)
-def _covers(file):
+def _notdef(file):
+    """Dessin du carré « caractère absent » de la police (sans fontTools : Pillow seul)."""
+    f = ImageFont.truetype(file, 24)
+    return f.getmask("\U0010FFFD").tobytes()
+
+
+@lru_cache(maxsize=None)
+def _has(file, ch):
     try:
-        from fontTools.ttLib import TTFont
-        return frozenset(TTFont(file, lazy=True).getBestCmap())
-    except Exception:
-        return frozenset()
+        mask = ImageFont.truetype(file, 24).getmask(ch)
+    except OSError:
+        return False
+    return bool(mask.getbbox()) and mask.tobytes() != _notdef(file)
 
 
 @lru_cache(maxsize=None)
@@ -100,7 +107,7 @@ def icon_glyph(glyph):
     for ch in ICONS.get(glyph, "") or "•":
         for family in ICON_FONTS:
             f = _font_file(family)
-            if f and ord(ch) in _covers(f):
+            if f and _has(f, ch):
                 return ch, f
     return "•", _font_file("DejaVu Sans")
 
