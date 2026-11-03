@@ -80,7 +80,11 @@ class Tray:
         self.profile = None         # indice du profil en cours
         self._key = None
         self.icon = pystray.Icon("G19Monitor", make_icon(), "G19 Monitor", self._menu())
-        self.icon.run_detached()
+        if os.name == "nt":
+            self.icon.run_detached()
+        else:   # AppIndicator : il faut une boucle GTK qui tourne, dans son propre fil
+            import threading
+            threading.Thread(target=self.icon.run, daemon=True, name="icône").start()
 
     def _menu(self):
         def page_item(pid):
