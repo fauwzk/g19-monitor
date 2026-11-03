@@ -66,6 +66,8 @@ try:
     from g19.home import Home
     from g19.daily import DayLog
     from g19.screencap import ScreenMirror
+    if os.name != "nt":          # Linux : portail de capture + PipeWire (Wayland, X11)
+        from g19.linux.screencast import LinuxMirror
     from g19.streaming import Streaming
     from g19.away import Away
     from g19.git_status import GitStatus
@@ -175,7 +177,7 @@ def make_ctx():
                history=History(), batteries=batteries, devices=DeviceWatcher(batteries),
                net=Pinger(lambda: settings.current().get("ping_target")),
                sysw=SystemWatch(settings.current), git=GitStatus(), away=Away(),
-               streaming=Streaming(), docker=DockerMonitor(), mirror=ScreenMirror(),
+               streaming=Streaming(), docker=DockerMonitor(), mirror=ScreenMirror() if os.name == "nt" else LinuxMirror(),
                fuel=FuelMonitor(), dnd=DoNotDisturb() if os.name == "nt" else LinuxDnd(),
                agenda=Agenda(lambda: settings.current().get("agenda_remind", 10)),
                home=Home(lambda: settings.current().get("ha_entities") or []),

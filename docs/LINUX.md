@@ -47,15 +47,15 @@ Marche : écran et touches du G19, toutes les pages et les thèmes (fond d'écra
 GNOME compris), CPU / RAM / disques / réseau, températures, ventilateur, GPU (AMD, et Intel par
 son temps de veille), ping, batteries, musique en cours et ses commandes (MPRIS), volume / micro
 / volume par appli / sortie et entrée par défaut (PulseAudio ou PipeWire), notifications du
-bureau (D-Bus), « Ne pas déranger » (KDE et serveurs compatibles), écran de repos (PC verrouillé
+bureau (D-Bus), recopie d'écran (portail de capture + PipeWire : le bureau demande une fois
+quel écran partager), « Ne pas déranger » (KDE et serveurs compatibles), écran de repos (PC verrouillé
 ou session inactive), Discord (socket IPC, client normal / Flatpak / Snap, Vesktop), rétroéclairage
 du clavier (hidraw), jeux Steam (natifs et Proton) : sessions, page GPU au lancement, succès,
 Claude Code, Steam (Web), Home Assistant, agenda, météo, bilan du jour, bandeaux, icône de la
 barre des tâches, utilitaire, démarrage automatique et gardien (systemd).
 
 Limites : pas de FPS des jeux (pas d'équivalent de RTSS sous Linux) ; sous Wayland, l'écran de
-repos ne voit pas « aucune touche depuis 5 min » sans verrouillage ; pas encore de recopie
-d'écran ; icônes Segoe remplacées par des symboles Unicode. Accès Discord, Home Assistant,
+repos ne voit pas « aucune touche depuis 5 min » sans verrouillage ; icônes Segoe remplacées par des symboles Unicode. Accès Discord, Home Assistant,
 Steam, agenda : copier les fichiers de `%LOCALAPPDATA%\G19Monitor` (Windows) dans
 `~/.config/g19-monitor/`.
 
