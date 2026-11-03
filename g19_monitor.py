@@ -86,6 +86,8 @@ try:
         from g19.linux.sensors import LinuxGpu
     from g19.lyrics import Lyrics
     from g19.media import MediaMonitor
+    if os.name != "nt":          # Linux : lecteurs MPRIS (D-Bus) à la place de SMTC
+        from g19.linux.mpris import MprisMonitor as MediaMonitor   # noqa: F811
     from g19.notifications import WindowsNotifications, flash_kind
     from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, RECAP_SECONDS, Ctx, has_lyrics, ignored,
                             volume_popup, popup_event, VOLUME_POPUP,
