@@ -6,8 +6,11 @@ import threading
 import time
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("G19_DATA_DIR",
-                               Path(os.environ.get("LOCALAPPDATA", Path.home())) / "G19Monitor"))
+if os.name == "nt":
+    _DEFAULT_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "G19Monitor"
+else:                 # Linux : ~/.config/g19-monitor
+    _DEFAULT_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "g19-monitor"
+DATA_DIR = Path(os.environ.get("G19_DATA_DIR", _DEFAULT_DIR))
 
 
 def load(name, default=None):

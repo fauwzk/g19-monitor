@@ -192,3 +192,38 @@ class SourceWatcher:
         with self._lock:
             out, self._pending = sorted(self._pending), set()
         return out
+
+
+if os.name != "nt":   # Linux : verrou et fichiers-signaux à la place des mutex de Windows
+    from .linux import instance as _lx
+
+    class SingleInstance(_lx.SingleInstance):          # noqa: F811
+        def __init__(self, mutex=MUTEX, quit_event=QUIT_EVENT):
+            super().__init__(mutex, quit_event)
+
+    def is_running(name=MUTEX):                        # noqa: F811
+        return _lx.is_running(name)
+
+    def guard_running():                               # noqa: F811
+        return False                # pas encore de gardien sous Linux
+
+    def stop_guard():                                  # noqa: F811
+        return False
+
+    def start_guard():                                 # noqa: F811
+        pass
+
+    def ensure_guard():                                # noqa: F811
+        return False
+
+    def stopped_on_purpose(event=GUARD_STOP):          # noqa: F811
+        _lx.stopped_on_purpose(event)
+
+    def stop(timeout=10, mutex=MUTEX, quit_event=QUIT_EVENT):   # noqa: F811
+        return _lx.stop(timeout, mutex, quit_event)
+
+    def wait_exit(pid, timeout=15):                    # noqa: F811
+        _lx.wait_exit(pid, timeout)
+
+    def _popen(args, env=None):                        # noqa: F811
+        _lx.popen(args, APP_DIR, env)

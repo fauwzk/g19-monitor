@@ -36,12 +36,19 @@ def _startup_failed():
                 f"(essai {tries + 1}/6)\n" + traceback.format_exc())
     if tries < 5 and "--preview" not in sys.argv:
         time.sleep(3)
+        detach = ({"creationflags": subprocess.DETACHED_PROCESS
+                   | subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
+                  else {"start_new_session": True})
         subprocess.Popen([sys.executable, *sys.argv], cwd=here,
                          env={**os.environ, "G19_START_RETRY": str(tries + 1)},
-                         creationflags=subprocess.DETACHED_PROCESS
-                         | subprocess.CREATE_NEW_PROCESS_GROUP, close_fds=True)
+                         close_fds=True, **detach)
     sys.exit(1)
 
+
+if os.name != "nt":
+    # Linux : fausses versions de winreg et des DLL Windows, avant tout le reste du paquet
+    from g19.linux import compat as _compat
+    _compat.install()
 
 try:
     from g19 import (config, discord_panel, instance, mixer, night, remote, rtss, screen,
@@ -88,7 +95,10 @@ try:
     from g19.sysinfo import SystemStats
     from g19.launcher import launch, page_action
     from g19.menu import SettingsMenu
-    from g19.tray import Tray, open_config
+    try:
+        from g19.tray import Tray, open_config
+    except ImportError:          # pas de pystray (Linux) : pas d'icône, le reste marche
+        from g19.linux.notray import Tray, open_config
     from g19.volume import VolumeMonitor
     from g19.vpn import VpnMonitor
     from g19.weather import WeatherMonitor
@@ -183,17 +193,23 @@ def preview(out_dir):
 
 
 def connect_lcd(inst, tray):
-    """Attend que Logitech Gaming Software soit prêt (utile juste après l'ouverture de session)."""
-    from g19.lcd import G19LCD
+    """Attend que Logitech Gaming Software soit prêt (utile juste après l'ouverture de session).
+    Sous Linux, pas de LGS : l'écran est piloté directement en USB (g19/usb_lcd.py)."""
+    if os.name == "nt":
+        from g19.lcd import G19LCD as Screen
+        waiting = "en attente de Logitech Gaming Software"
+    else:
+        from g19.usb_lcd import G19USB as Screen
+        waiting = "en attente du G19 (USB)"
 
     warned = False
     while not inst.quit_requested():
         try:
-            return G19LCD("PC Monitor")
+            return Screen("PC Monitor")
         except (OSError, RuntimeError) as e:
             if not warned:
                 log.warning("LCD indisponible (%s), nouvel essai toutes les 5 s", e)
-                tray.icon.title = "G19 Monitor — en attente de Logitech Gaming Software"
+                tray.icon.title = "G19 Monitor — " + waiting
                 warned = True
         end = time.time() + 5
         while time.time() < end:
