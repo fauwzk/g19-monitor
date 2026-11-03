@@ -35,6 +35,81 @@ def _json(*args):
     return json.loads(_pactl("--format=json", *args) or "[]")
 
 
+PORT_SEP = "#"             # « sortie#port » : un port de la carte son compte comme un périphérique
+
+
+def endpoints(entries, default):
+    """[(id, nom)] des sorties (ou entrées) et l'id de celle par défaut. Une carte à plusieurs
+    ports (haut-parleurs et prise casque d'un portable) donne une ligne par port : choisir
+    « Casque audio » règle la sortie par défaut et son port."""
+    devs, current = [], None
+    for e in entries:
+        ports = [p for p in e.get("ports") or [] if p.get("name")]
+        if len(ports) < 2:
+            devs.append((e["name"], _short(e.get("description") or e["name"])))
+            if e["name"] == default:
+                current = e["name"]
+            continue
+        for port in ports:
+            dev_id = e["name"] + PORT_SEP + port["name"]
+            name = port.get("description") or port["name"]
+            if port.get("availability") == "not available":
+                name += " (débranché)"
+            devs.append((dev_id, name))
+            if e["name"] == default and e.get("active_port") == port["name"]:
+                current = dev_id
+    return devs, current
+
+
+def set_default(dev_id, inputs=False):
+    """Sortie (ou entrée) par défaut, et son port quand il y en a un."""
+    verb = "source" if inputs else "sink"
+    name, _, port = dev_id.partition(PORT_SEP)
+    _pactl(f"set-default-{verb}", name)
+    if port:
+        _pactl(f"set-{verb}-port", name, port)
+
+
+def _sources():
+    return [s for s in _json("list", "sources") if not s.get("name", "").endswith(".monitor")]
+
+
+def list_devices():
+    """(sorties, entrées) [(id, nom)] pour l'utilitaire, comme volume.list_devices."""
+    try:
+        outs, _ = endpoints(_json("list", "sinks"), _pactl("get-default-sink").strip())
+        ins, _ = endpoints(_sources(), _pactl("get-default-source").strip())
+        return outs, ins
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return [], []
+
+
+def apply_profile(p):
+    """Profil : sortie (et son port), micro, volume. (réussi ?, texte du bandeau)."""
+    outputs, inputs = list_devices()
+    missing = []
+    out = _find(outputs, p.get("out_id"), p.get("out"))
+    if out:
+        set_default(out)
+        vol = p.get("volume")
+        if vol is not None:
+            _pactl("set-sink-volume", "@DEFAULT_SINK@", f"{int(vol)}%")
+            if int(vol) > 0:
+                _pactl("set-sink-mute", "@DEFAULT_SINK@", "0")
+    elif p.get("out") or p.get("out_id"):
+        missing.append("sortie")
+    if p.get("in") or p.get("in_id"):
+        mic = _find(inputs, p.get("in_id"), p.get("in"))
+        if mic:
+            set_default(mic, inputs=True)
+        else:
+            missing.append("micro")
+    if missing:
+        return False, " et ".join(missing) + " introuvable" + ("s" if len(missing) > 1 else "")
+    name = dict(outputs).get(out, p.get("out") or "")
+    return True, name or "appliqué"
+
+
 def _level(entry):
     vols = [int(str(v.get("value_percent", "0")).rstrip("%")) for v in
             (entry.get("volume") or {}).values()]
@@ -112,14 +187,11 @@ class PulseVolume:
 
     def _refresh(self):
         sinks = _json("list", "sinks")
-        sources = [s for s in _json("list", "sources")
-                   if not s.get("name", "").endswith(".monitor")]
+        sources = _sources()
         default_out = _pactl("get-default-sink").strip()
         default_in = _pactl("get-default-source").strip()
-        self.outputs = [(s["name"], _short(s.get("description") or s["name"])) for s in sinks]
-        self.inputs = [(s["name"], _short(s.get("description") or s["name"])) for s in sources]
-        self.out_id = default_out if any(i == default_out for i, _ in self.outputs) else None
-        self.in_id = default_in if any(i == default_in for i, _ in self.inputs) else None
+        self.outputs, self.out_id = endpoints(sinks, default_out)
+        self.inputs, self.in_id = endpoints(sources, default_in)
         now = {i: (n, "out") for i, n in self.outputs}
         now.update({i: (n, "in") for i, n in self.inputs})
         if self._known is not None:
@@ -131,11 +203,11 @@ class PulseVolume:
 
         sink = next((s for s in sinks if s["name"] == default_out), None)
         if sink:
-            self.device = sink.get("description") or sink["name"]
+            self.device = dict(self.outputs).get(self.out_id) or sink.get("description") or sink["name"]
             self._level_changed(_level(sink), bool(sink.get("mute")))
         src = next((s for s in sources if s["name"] == default_in), None)
         if src:
-            self.mic_device = src.get("description") or src["name"]
+            self.mic_device = dict(self.inputs).get(self.in_id) or src.get("description") or src["name"]
             self._mic_changed(_level(src), bool(src.get("mute")))
         else:
             self.mic_level = None
@@ -175,24 +247,11 @@ class PulseVolume:
         kind, *args = cmd
         if kind == "default":
             dev = args[0]
-            if any(i == dev for i, _ in self.inputs):
-                _pactl("set-default-source", dev)
-            else:
-                _pactl("set-default-sink", dev)
+            set_default(dev, inputs=any(i == dev for i, _ in self.inputs))
         elif kind == "profile":
             p = args[0]
-            done = []
             try:
-                out = _find(self.outputs, p.get("out_id"), p.get("out"))
-                if out:
-                    _pactl("set-default-sink", out)
-                    done.append("sortie")
-                mic = _find(self.inputs, p.get("in_id"), p.get("in"))
-                if mic:
-                    _pactl("set-default-source", mic)
-                    done.append("micro")
-                ok, text = bool(done), (" et ".join(done) + " changés") if done else \
-                    "périphériques introuvables"
+                ok, text = apply_profile(p)
             except OSError as e:
                 ok, text = False, str(e)
             self.profile_events.put((p.get("name") or "?", ok, text))

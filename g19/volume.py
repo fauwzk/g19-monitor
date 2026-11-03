@@ -2,6 +2,7 @@
 général, micro, volume par appli, vumètres. Les réglages s'appliquent directement à Windows.
 
 Tout l'accès COM se fait dans un seul thread ; l'écran envoie ses commandes par `do()`."""
+import os
 import queue
 import threading
 import time
@@ -441,3 +442,7 @@ class VolumeMonitor:
         set_(new, None)
         if get_mute() and args[0] > 0:
             set_mute(0, None)       # monter le volume réactive le son
+
+
+if os.name != "nt":   # Linux : périphériques et profils via PulseAudio / PipeWire (pactl)
+    from .linux.pulse import apply_profile, list_devices   # noqa: E402,F811

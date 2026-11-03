@@ -5,12 +5,18 @@ Hors réglage, ▲ ▼ montent / baissent le volume général et OK entre en ré
 profils s'il y en a). En réglage, ▲ ▼ choisissent la ligne, ◄ ► règlent (ou parcourent les
 périphériques ; sur les profils : passent aussitôt au précédent / suivant), OK coupe le son,
 applique le périphérique choisi ou passe au profil suivant, Annuler / Menu sortent."""
-from .volume import STEP, auto_profiles
+import os
+
+from .volume import STEP, _find, auto_profiles
 
 
 def profiles(c):
     """Profils créés dans l'utilitaire, sinon casque / haut-parleurs détectés tout seuls."""
     own = [p for p in (c.settings or {}).get("audio_profiles") or () if p.get("name")]
+    if own and c.volume and os.name != "nt":
+        # Linux : profils copiés de Windows (autres périphériques) écartés ; aucun ne
+        # correspond → casque / haut-parleurs automatiques
+        own = [p for p in own if _find(c.volume.outputs, p.get("out_id"), p.get("out"))]
     if own or not c.volume:
         return own
     return auto_profiles(c.volume.outputs, c.volume.out_id)
