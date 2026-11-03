@@ -1,0 +1,9 @@
+# Logitech G19 : écran (046d:c229) et clavier (046d:c228) accessibles sans root, pour G19
+# Monitor sous Linux.  Installation :
+#   sudo cp installer/linux/99-g19.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+# puis débrancher / rebrancher le clavier.
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c229", MODE="0666", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c228", MODE="0666", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c228", MODE="0666", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c229", MODE="0666", TAG+="uaccess"
