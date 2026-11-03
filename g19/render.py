@@ -1,5 +1,6 @@
 """Rendu des pages 320x240 avec Pillow."""
 import math
+import os
 import re
 import time
 
@@ -444,14 +445,22 @@ def font(size, bold=False):
 @lru_cache(maxsize=None)
 def _font(face, size, bold):
     regular, heavy, scale = FONT_FACES.get(face, ("segoeui.ttf", "segoeuib.ttf", 1.0))
+    name = heavy if bold else regular
+    if os.name == "nt":
+        file = rf"C:\Windows\Fonts\{name}"
+    else:                         # Linux : l'équivalent libre (Noto Sans, DejaVu…)
+        from .linux import fonts
+        file = fonts.path(name)
     try:
-        f = ImageFont.truetype(rf"C:\Windows\Fonts\{heavy if bold else regular}",
-                               max(6, round(size * scale)))
-        if face == "hud":         # police variable : graisse choisie par son nom
-            f.set_variation_by_name("Bold" if bold else "Regular")
-        return f
-    except (OSError, ValueError):
+        f = ImageFont.truetype(file, max(6, round(size * scale)))
+    except (OSError, ValueError, TypeError):
         return ImageFont.load_default(size)
+    if face == "hud":             # police variable : graisse choisie par son nom
+        try:
+            f.set_variation_by_name("Bold" if bold else "Regular")
+        except (OSError, ValueError):
+            pass                  # police fixe (Linux) : telle quelle
+    return f
 
 
 # Pixel 8 bits : textes sans lissage, nets comme sur une console
@@ -2705,7 +2714,11 @@ _icon_fonts = {}
 
 
 def icon(d, glyph, cx, cy, size, color):
-    """Icône de la police d'icônes de Windows (Segoe Fluent Icons, sinon MDL2)."""
+    """Icône de la police d'icônes de Windows (Segoe Fluent Icons, sinon MDL2) ; sous Linux,
+    un symbole Unicode proche (g19/linux/fonts.py)."""
+    if os.name != "nt":
+        from .linux import fonts
+        return fonts.icon(d, glyph, cx, cy, size, color)
     f = _icon_fonts.get(size)
     if f is None:
         for name in ("SegoeIcons.ttf", "segmdl2.ttf"):

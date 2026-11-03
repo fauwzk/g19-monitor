@@ -5,6 +5,7 @@ ImageDraw (text et textlength), donc vaut pour tout le dessin de l'appli sans to
 
 Sans moteur de mise en forme (raqm), les séquences composées d'émojis ne se combinent pas : on
 les simplifie (👍🏽 → 👍, 👨‍👩‍👧 → 👨, sélecteurs de variante retirés)."""
+import os
 from functools import lru_cache
 
 from PIL import ImageDraw, ImageFont
@@ -12,6 +13,18 @@ from PIL import ImageDraw, ImageFont
 EMOJI_FONT = r"C:\Windows\Fonts\seguiemj.ttf"
 SYMBOL_FONT = r"C:\Windows\Fonts\seguisym.ttf"
 FONTS_DIR = "C:\\Windows\\Fonts\\"
+if os.name != "nt":           # Linux : équivalents libres (Noto, DejaVu) via fontconfig
+    from .linux import fonts as _fonts
+    EMOJI_FONT = _fonts.path("seguiemj.ttf") or ""
+    SYMBOL_FONT = _fonts.path("seguisym.ttf") or ""
+    FONTS_DIR = ""
+
+
+def _script_file(name):
+    """Fichier d'une police de secours (écritures non latines)."""
+    return FONTS_DIR + name if os.name == "nt" else (_fonts.path(name) or "")
+
+
 # autres écritures, dans l'ordre d'essai : (nom, police normale, police grasse)
 SCRIPTS = (("yugothic", "YuGothM.ttc", "YuGothB.ttc"),       # japonais (kana et kanji)
            ("yahei", "msyh.ttc", "msyhbd.ttc"),              # chinois simplifié
@@ -51,7 +64,7 @@ def _fallback(kind, size, bold=False):
             return ImageFont.truetype(SYMBOL_FONT, size)
         for name, regular, heavy in SCRIPTS:
             if name == kind:
-                return ImageFont.truetype(FONTS_DIR + (heavy if bold else regular), size)
+                return ImageFont.truetype(_script_file(heavy if bold else regular), size)
     except OSError:
         pass
     return None
@@ -61,7 +74,7 @@ def _fallback(kind, size, bold=False):
 def _script_of(cp):
     """Police d'écriture qui a ce caractère (cmaps lues seulement au besoin), ou None."""
     for name, regular, _heavy in SCRIPTS:
-        cmap = _cmap(FONTS_DIR + regular)
+        cmap = _cmap(_script_file(regular))
         if cmap and cp in cmap:
             return name
     return None
