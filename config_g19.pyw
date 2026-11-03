@@ -904,6 +904,12 @@ class ConfigApp(QMainWindow):
                 self.ap_in.setCurrentText(keep_in)
             # aucun profil enregistré : ceux que le G19 utilise tout seul, montrés ici
             self._auto = volume.auto_profiles(devs[0])
+            if os.name != "nt" and self._audio_profiles and not all(
+                    volume._find(devs[0], p.get("out_id"), p.get("out"))
+                    for p in self._audio_profiles):
+                # Linux : profils copiés de Windows, pour d'autres périphériques → comme
+                # l'appli, les automatiques (casque / haut-parleurs)
+                self._audio_profiles = []
             self._refresh_profiles()
         self._auto = []
         self.work(volume.list_devices, done)
@@ -1254,9 +1260,19 @@ class ConfigApp(QMainWindow):
                                       self.button("Redémarrer", lambda: self._control("restart")),
                                       self.button("Arrêter", lambda: self._control("stop"))),
                  "Le gardien la relance si elle plante ; Arrêter ne la fait pas relancer.")
-        card.row("Gardien", self.button("Panneau du gardien", self._open_guard),
-                 "Démarrage avec Windows, claviers branchés, état des deux applis (G19 et "
-                 "G15 / G510).")
+        if os.name == "nt":
+            card.row("Gardien", self.button("Panneau du gardien", self._open_guard),
+                     "Démarrage avec Windows, claviers branchés, état des deux applis (G19 et "
+                     "G15 / G510).")
+        else:                     # Linux : le gardien est un service utilisateur systemd
+            from g19.linux import service
+            t = Toggle(service.enabled())
+            self.toggles.append(t)
+            t.toggled.connect(lambda on: (service.set_enabled(on), self._flash(
+                "Démarrage auto et gardien " + ("activés" if on else "désactivés"))))
+            card.row("Démarrage avec la session", t,
+                     "Service systemd (gardien) : démarre l'appli à l'ouverture de session et "
+                     "la relance si elle plante.")
         for module, text, hint in (
                 (install_hooks, "Voyant Claude", "Hooks dans ~/.claude/settings.json."),):
             t = Toggle(module.is_installed())
@@ -1273,6 +1289,8 @@ class ConfigApp(QMainWindow):
         self.spin("fan_recover_seconds", card, "Retour au profil, refroidi depuis", 10, 900, 10,
                   "s", "Le profil revient seul une fois CPU et GPU 8 °C sous les seuils pendant "
                        "cette durée. Auto aussi à la fermeture de l'appli.")
+        if os.name != "nt":
+            card.hide()           # LibreHardwareMonitor : Windows seulement (réglages gardés)
 
         card = self._card(lay, "Sources de données")
         self.sources = card.widget(label("…"))

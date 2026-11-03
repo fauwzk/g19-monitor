@@ -14,9 +14,10 @@ def profiles(c):
     """Profils créés dans l'utilitaire, sinon casque / haut-parleurs détectés tout seuls."""
     own = [p for p in (c.settings or {}).get("audio_profiles") or () if p.get("name")]
     if own and c.volume and os.name != "nt":
-        # Linux : profils copiés de Windows (autres périphériques) écartés ; aucun ne
-        # correspond → casque / haut-parleurs automatiques
-        own = [p for p in own if _find(c.volume.outputs, p.get("out_id"), p.get("out"))]
+        # Linux : profils copiés de Windows (autres périphériques) : gardés seulement si tous
+        # trouvent leur sortie, sinon casque / haut-parleurs automatiques
+        if not all(_find(c.volume.outputs, p.get("out_id"), p.get("out")) for p in own):
+            own = []
     if own or not c.volume:
         return own
     return auto_profiles(c.volume.outputs, c.volume.out_id)

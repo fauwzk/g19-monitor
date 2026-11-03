@@ -71,6 +71,13 @@ ICONS = {
     "": "✕",        # muet
     "": "●",        # micro
     "": "♪♫",       # musique
+    # utilitaire : menu de gauche
+    "": "▤",        # pages
+    "": "⌨",        # clavier
+    "": "♫",        # audio
+    "": "➚↗",       # raccourcis
+    "": "☁⚙",       # services
+    "": "⚙",        # système
 }
 ICON_FONTS = ("DejaVu Sans", "Noto Sans Symbols 2", "Noto Sans Symbols", "Noto Sans")
 
