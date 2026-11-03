@@ -154,7 +154,9 @@ class SmoothDraw(ImageDraw.ImageDraw):
                          lambda d, sx, sy: d.polygon(pp(sx, sy), outline=255,
                                                      width=width * AA), outline)
 
-    def line(self, xy, fill=None, width=0, joint=None):
+    def line(self, xy, fill=None, width=1, joint=None):
+        # épaisseur 0 : 1 px, comme Pillow ≤ 11 (Pillow 12 ne trace plus rien à 0)
+        width = max(1, width or 0)
         if not self._ok() or fill is None:
             return super().line(xy, fill, width, joint)
         v = _flat(xy)
