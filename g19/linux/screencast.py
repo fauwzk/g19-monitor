@@ -130,11 +130,14 @@ class LinuxMirror:
             try:
                 self.status = "connexion au portail…"
                 conn, session, node, fd, size = self._portal_session(Gio, GLib, ctx)
+                # hauteur imposée (proportions de l'écran) : laissée libre, GStreamer prend 1 px
+                sw, sh = (size if size and size[0] else (16, 9))
+                height = max(2, round(STREAM_W * sh / sw / 2) * 2)
                 pipe = Gst.parse_launch(
                     f"pipewiresrc fd={fd} path={node} always-copy=true do-timestamp=true ! "
                     f"videoconvert ! videoscale ! video/x-raw,format=RGB,width={STREAM_W},"
-                    f"pixel-aspect-ratio=1/1 ! appsink name=sink max-buffers=1 drop=true "
-                    f"sync=false")
+                    f"height={height},pixel-aspect-ratio=1/1 ! appsink name=sink "
+                    f"max-buffers=1 drop=true sync=false")
                 sink = pipe.get_by_name("sink")
                 pipe.set_state(Gst.State.PLAYING)
                 self.status = ""
