@@ -148,6 +148,9 @@ class Backlight:
             self._stop.wait(TICK)
 
     def _load(self):
+        if self._dll is None and os.name != "nt":
+            from .linux.g19led import G19Led       # Linux : le clavier en direct (hidraw)
+            self._dll = G19Led()
         if self._dll is None:
             dll = ctypes.CDLL(DLL)
             for fn in ("LogiLedInit", "LogiLedStopEffects", "LogiLedSaveCurrentLighting",

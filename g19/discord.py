@@ -7,6 +7,7 @@ setup_discord.py ; les jetons sont gardés dans %LOCALAPPDATA%\\G19Monitor\\disc
 import ctypes
 import io
 import json
+import os
 import re
 try:
     import msvcrt          # canal nommé de Discord (Windows)
@@ -28,7 +29,8 @@ import psutil
 
 from . import config
 
-DISCORD_EXES = {"discord.exe", "discordptb.exe", "discordcanary.exe"}
+DISCORD_EXES = {"discord.exe", "discordptb.exe", "discordcanary.exe",
+                "discord", "discordptb", "discordcanary", "vesktop", "webcord"}   # + Linux
 
 
 def discord_running():
@@ -59,6 +61,10 @@ class Pipe:
     sur un handle synchrone, une lecture en attente bloquerait aussi les écritures."""
 
     def __init__(self):
+        self.sock = None
+        if os.name != "nt":
+            self._connect_unix()
+            return
         for i in range(10):
             try:
                 self.f = open(rf"\\.\pipe\discord-ipc-{i}", "r+b", buffering=0)
@@ -69,11 +75,48 @@ class Pipe:
             raise RpcError("Discord n'est pas lancé")
         self.handle = msvcrt.get_osfhandle(self.f.fileno())
 
+    def _connect_unix(self):
+        """Linux : socket discord-ipc-N (Discord normal, Flatpak ou Snap)."""
+        import socket
+        base = os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TMPDIR") or "/tmp"
+        dirs = [base, f"{base}/app/com.discordapp.Discord", f"{base}/snap.discord",
+                f"{base}/.flatpak/com.discordapp.Discord/xdg-run", "/tmp"]
+        for d in dirs:
+            for i in range(10):
+                path = f"{d}/discord-ipc-{i}"
+                if not os.path.exists(path):
+                    continue
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                try:
+                    s.connect(path)
+                except OSError:
+                    s.close()
+                    continue
+                self.sock = s
+                return
+        raise RpcError("Discord n'est pas lancé")
+
     def send(self, op, payload):
         data = json.dumps(payload).encode()
-        self.f.write(struct.pack("<II", op, len(data)) + data)
+        frame = struct.pack("<II", op, len(data)) + data
+        if self.sock:
+            self.sock.sendall(frame)
+            return
+        self.f.write(frame)
 
     def available(self):
+        if self.sock:             # Linux : octets en attente sur le socket, sans bloquer
+            import fcntl
+            import select
+            import termios
+            try:
+                n = struct.unpack("i", fcntl.ioctl(self.sock, termios.FIONREAD,
+                                                   struct.pack("i", 0)))[0]
+            except OSError:
+                raise RpcError("connexion Discord perdue")
+            if n == 0 and select.select([self.sock], [], [], 0)[0]:
+                raise RpcError("connexion Discord perdue")    # lisible mais vide : fermé
+            return n
         n = wintypes.DWORD(0)
         if not _k32.PeekNamedPipe(self.handle, None, 0, None, ctypes.byref(n), None):
             raise RpcError("connexion Discord perdue")
@@ -82,7 +125,7 @@ class Pipe:
     def _read(self, n):
         buf = b""
         while len(buf) < n:
-            chunk = self.f.read(n - len(buf))
+            chunk = self.sock.recv(n - len(buf)) if self.sock else self.f.read(n - len(buf))
             if not chunk:
                 raise RpcError("connexion Discord perdue")
             buf += chunk
@@ -130,7 +173,7 @@ class Pipe:
 
     def close(self):
         try:
-            self.f.close()
+            (self.sock or self.f).close()
         except OSError:
             pass
 
