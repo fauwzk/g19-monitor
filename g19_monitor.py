@@ -1099,6 +1099,8 @@ def run():
                 changes.append(c.volume.changes.get_nowait())
             if changes and cfg.get("device_toasts", True):
                 c.devices.audio(changes)       # casque / enceintes / micro branchés ou retirés
+            # casque branché / allumé : on passe dessus ; retiré / éteint : haut-parleurs
+            guarded("bascule casque", mixer.auto_switch, c, changes)
             while not c.volume.profile_events.empty():
                 name, ok, text = c.volume.profile_events.get_nowait()
                 (log.info if ok else log.warning)("profil audio « %s » : %s", name, text)

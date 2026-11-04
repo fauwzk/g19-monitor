@@ -121,8 +121,9 @@ def auto_profiles(outputs, current=None):
     real = [(i, n) for i, n in outputs if not _has(n, NOT_REAL)]
 
     def best(score):
+        # un port débranché (prise casque vide d'un portable) passe après les autres
         ranked = sorted(((score(n), i == current, i, n) for i, n in real),
-                        key=lambda r: (-r[0], not r[1], r[3].casefold()))
+                        key=lambda r: (-r[0], "débranché" in r[3], not r[1], r[3].casefold()))
         return ranked[0][2:] if ranked and ranked[0][0] > 0 else None
 
     head, spk = best(_headset_score), best(_speaker_score)

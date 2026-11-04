@@ -7,7 +7,7 @@ périphériques ; sur les profils : passent aussitôt au précédent / suivant),
 applique le périphérique choisi ou passe au profil suivant, Annuler / Menu sortent."""
 import os
 
-from .volume import STEP, _find, auto_profiles
+from .volume import STEP, _find, _headset_score, _speaker_score, auto_profiles
 
 
 def profiles(c):
@@ -113,3 +113,44 @@ def handle(c, b):
         else:
             vol.do(kind + "_mute")
     return True
+
+
+# --- bascule automatique casque / haut-parleurs (réglage headset_auto_switch) ---
+
+_seen = {"hyperx": None}
+
+
+def _pick(profs, want_headset, name=""):
+    """Profil casque (de préférence celui de la sortie `name`) ou profil haut-parleurs."""
+    profs = [p for p in profs if "débranché" not in (p.get("out") or "")]   # prise vide
+    if want_headset:
+        cands = [p for p in profs if _headset_score(p.get("out") or "") or
+                 "casque" in (p.get("name") or "").casefold()]
+        exact = [p for p in cands if name and name.casefold() in (p.get("out") or "").casefold()]
+        return (exact or cands or [None])[0]
+    cands = [p for p in profs if _speaker_score(p.get("out") or "") or
+             "haut-parleur" in (p.get("name") or "").casefold()]
+    return (cands or [None])[0]
+
+
+def auto_switch(c, changes):
+    """Casque branché ou allumé → son profil ; retiré ou éteint → les haut-parleurs.
+    `changes` : [(nom, "out" | "in", connecté ?)] des sorties apparues / disparues ; le casque
+    HyperX sans fil est aussi suivi à son allumage (dongle toujours branché). Renvoie le
+    profil appliqué, ou None."""
+    hx = getattr(c.batteries, "hyperx", None) if c.batteries else None
+    hx_on = bool(hx and hx.connected) if hx is not None else None
+    events = [(n, on) for n, flow, on in changes if flow == "out" and _headset_score(n)]
+    if hx_on is not None and _seen["hyperx"] is not None and hx_on != _seen["hyperx"]:
+        events.append(("hyperx", hx_on))
+    _seen["hyperx"] = hx_on
+    if not events or not (c.settings or {}).get("headset_auto_switch", True) or not c.volume:
+        return None
+    name, on = events[-1]
+    profs = profiles(c)
+    target = _pick(profs, on, name)
+    cur = c.volume.active_profile(profs)
+    if target is None or (cur is not None and profs[cur] is target):
+        return None             # rien à faire, ou déjà sur ce profil
+    c.volume.do("profile", target)
+    return target

@@ -95,6 +95,7 @@ DEFAULTS = {
     "rain_toasts": True,             # bandeau « pluie dans ~30 min »
     "day_recap_hour": 21,          # bandeau « Bilan du jour » à cette heure (0 : aucun)
     "smooth_shapes": True,           # formes lissées (anticrénelage) sur le G19
+    "headset_auto_switch": True,     # casque branché / allumé : on passe dessus, puis retour
     "agenda_remind": 10,             # rappel N min avant un événement de l'agenda (0 : aucun)
     "ha_entities": [],               # appareils Home Assistant de la page Maison (vide : auto)
     "fuel_toasts": True,             # bandeau quand un carburant est en rupture ou revient
