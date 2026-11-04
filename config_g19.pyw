@@ -848,6 +848,10 @@ class ConfigApp(QMainWindow):
                 self.sc_name.setText(Path(path).stem)
 
     def _tab_audio(self, lay):
+        card = self._card(lay, "Casque")
+        self.toggle("headset_auto_switch", card, "Basculer tout seul sur le casque",
+                    "Casque branché ou allumé (HyperX…) : son profil s'applique ; retiré ou "
+                    "éteint : retour aux haut-parleurs.")
         card = self._card(lay, "Profils audio")
         self.ap_table = self._table(["Profil", "Sortie", "Volume"], 170)
         card.widget(self.ap_table)
