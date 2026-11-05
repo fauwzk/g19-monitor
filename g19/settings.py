@@ -111,6 +111,33 @@ DEFAULTS = {
     "idle_minutes": 5,               # inactif après tant de minutes sans clavier ni souris
     "away_summary": True,            # au retour, résumé de ce qui est arrivé
     "away_min_minutes": 5,           # absence minimale pour avoir le résumé
+    "idle_on_lock": True,            # PC verrouillé : écran de repos tout de suite
+    "idle_in_video": False,          # écran de repos même pendant une vidéo plein écran
+    "idle_style": "clock",           # clock, minimal, seconds, daily, media, page
+    "idle_weather": True,            # météo / bilan sous l'horloge
+    "idle_events": True,             # ce qui est arrivé pendant l'absence, en bas
+    "idle_drift": False,             # l'écran de repos se décale un peu chaque minute
+    "idle_dim_minutes": 0,           # sur l'écran de repos depuis N min : assombri (0 : jamais)
+    "idle_dim_level": 30,            # luminosité une fois assombri (%)
+    "idle_off_minutes": 0,           # sur l'écran de repos depuis N min : écran noir (0 : jamais)
+    "away_summary_seconds": 45,      # le résumé d'absence se ferme après (0 : à la touche)
+    "game_recap_seconds": 20,        # le récapitulatif de partie se ferme après (0 : à la touche)
+    "back_after_game_seconds": 5,    # retour à la page d'avant après une partie sans récap
+    "game_grace_seconds": 90,        # s sans images avant de considérer le jeu fermé
+    "volume_popup_seconds": 1.6,     # fenêtre de volume / micro affichée tant de secondes
+    "claude_remind_minutes": 10,     # rappel « Claude attend » après, puis toutes les N min
+    "rain_ahead_minutes": 45,        # bandeau pluie jusqu'à N min avant
+    "alert_sustain_seconds": 5,      # au-dessus du seuil depuis N s avant l'alerte
+    "update_check_minutes": 15,      # vérification des mises à jour toutes les N min
+    "auto_cycle_seconds": 0,         # pages qui défilent seules toutes les N s (0 : non)
+    "auto_cycle_in_game": False,     # défilement aussi pendant une partie
+    "return_page_minutes": 0,        # sans touche depuis N min : retour à return_page (0 : non)
+    "return_page": "system",
+    "menu_close_seconds": 0,         # menu / liste des écrans fermés après N s sans touche
+    "lyrics_offset_ms": 300,         # avance des paroles synchronisées (ms, négatif = retard)
+    "marquee_speed": 26,             # défilement des titres trop longs (px/s)
+    "marquee_pause": 2.5,            # pause avant chaque défilement (s)
+    "art_fade_ms": 450,              # fondu d'une pochette à la suivante (ms, 0 : sec)
     "screen_brightness": 100,        # écran du G19 (%), appliqué à chaque image
     "screen_contrast": 100,
     "screen_gamma": 100,             # > 100 : tons sombres relevés (le LCD les écrase)
@@ -161,6 +188,88 @@ DEFAULTS = {
     "night_theme": "",               # thème imposé la nuit ("" = garder le thème)
     "night_quiet": True,             # la nuit, le clavier ne clignote que pour les alertes      # encart Claude masqué N s après la fin du dernier agent (0 = toujours)           # ventilateurs carte mère (via LHM) : voir fans.PROFILES
 }
+
+def _dur(values, unit, zero=None):
+    """[(valeur, libellé)] pour une liste de durées ; `zero` : libellé de la valeur 0."""
+    out = []
+    for v in values:
+        if v == 0 and zero:
+            out.append((0, zero))
+        elif unit == "s" and v >= 60 and v % 60 == 0:
+            out.append((v, f"{v // 60} min"))
+        elif unit == "min" and v < 1:
+            out.append((v, f"{round(v * 60)} s"))
+        elif unit == "min" and v >= 60 and v % 60 == 0:
+            out.append((v, f"{v // 60} h"))
+        elif unit == "min" and v >= 60:
+            out.append((v, f"{v // 60} h {v % 60:02d}"))
+        else:
+            out.append((v, f"{v:g} {unit}".replace(".", ",")))
+    return out
+
+
+# choix proposés par l'utilitaire et le menu du G19 pour les réglages de temps
+CHOICES = {
+    "idle_minutes": _dur([0.5, 1, 2, 3, 4, 5, 7, 10, 15, 20, 25, 30, 45, 60, 90, 120, 180, 240],
+                         "min"),
+    "away_min_minutes": _dur([0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 120, 240], "min",
+                             "toujours"),
+    "idle_dim_minutes": _dur([0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180], "min",
+                             "jamais"),
+    "idle_off_minutes": _dur([0, 1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480],
+                             "min", "jamais"),
+    "idle_dim_level": [(v, f"{v} %") for v in (5, 10, 15, 20, 30, 40, 50, 60, 70, 80)],
+    "toast_seconds": _dur([2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 45, 60], "s"),
+    "volume_popup_seconds": _dur([0.8, 1, 1.2, 1.6, 2, 2.5, 3, 4, 5, 7, 10], "s"),
+    "away_summary_seconds": _dur([0, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600], "s",
+                                 "jusqu'à une touche"),
+    "game_recap_seconds": _dur([0, 5, 10, 15, 20, 30, 45, 60, 90, 120, 300], "s",
+                               "jusqu'à une touche"),
+    "back_after_game_seconds": _dur([0, 2, 5, 10, 15, 30, 60, 120, 300], "s", "aussitôt"),
+    "game_grace_seconds": _dur([15, 30, 45, 60, 90, 120, 180, 300, 600], "s"),
+    "claude_remind_minutes": _dur([1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 120], "min"),
+    "rain_ahead_minutes": _dur([15, 30, 45, 60, 75, 90, 105, 120], "min"),
+    "alert_sustain_seconds": _dur([0, 2, 5, 10, 15, 30, 60, 120, 300], "s", "aussitôt"),
+    "update_check_minutes": _dur([5, 10, 15, 30, 60, 120, 180, 360, 720, 1440], "min"),
+    "auto_cycle_seconds": _dur([0, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600],
+                               "s", "non"),
+    "return_page_minutes": _dur([0, 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 120], "min", "non"),
+    "menu_close_seconds": _dur([0, 5, 10, 15, 20, 30, 45, 60, 120, 300], "s", "jamais"),
+    "claude_strip_seconds": _dur([0, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600], "s",
+                                 "jamais"),
+    "agenda_remind": _dur([0, 1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 1440], "min",
+                          "aucun"),
+    "fan_recover_seconds": _dur([10, 20, 30, 45, 60, 90, 120, 180, 300, 600, 900], "s"),
+    "marquee_speed": [(10, "très lent"), (16, "lent"), (26, "normal"), (40, "rapide"),
+                      (60, "très rapide"), (90, "éclair")],
+    "marquee_pause": _dur([0, 0.5, 1, 1.5, 2.5, 4, 6, 10], "s"),
+    "art_fade_ms": [(0, "sec"), (150, "150 ms"), (300, "300 ms"), (450, "450 ms"),
+                    (700, "700 ms"), (1000, "1 s"), (1500, "1,5 s"), (2500, "2,5 s")],
+    "day_recap_hour": [(0, "aucun")] + [(h, f"{h} h") for h in range(1, 24)],
+}
+
+
+# écran du PC au repos (render.render_idle)
+IDLE_STYLES = {
+    "clock": "Horloge, météo et événements",
+    "minimal": "Horloge seule",
+    "seconds": "Horloge avec les secondes",
+    "daily": "Bilan du jour",
+    "media": "Média en cours (sinon horloge)",
+    "page": "Garder la page affichée",
+}
+
+
+def choices(key, current=None):
+    """Choix d'un réglage, avec la valeur actuelle en plus si elle n'y est pas (réglée à la
+    main dans settings.json, ou par une ancienne version)."""
+    items = list(CHOICES[key])
+    if current is not None and all(v != current for v, _ in items):
+        items.append((current, f"{current:g} (perso)".replace(".", ",")
+                      if isinstance(current, (int, float)) else f"{current} (perso)"))
+        items.sort(key=lambda kv: kv[0] if isinstance(kv[0], (int, float)) else 0)
+    return items
+
 
 def hex_to_pct(color):
     """'#rrggbb' → (r, g, b) en % pour le SDK, None si vide ou invalide."""
@@ -243,6 +352,27 @@ def current():
             return _current["settings"] or load_defaults()
         _current["mtime"] = m
     return _current["settings"]
+
+
+def get(key):
+    """Un réglage, pour les modules qui n'ont pas les réglages sous la main ; la valeur par
+    défaut s'il manque ou n'est pas un nombre alors qu'on en attend un."""
+    value = current().get(key, DEFAULTS.get(key))
+    default = DEFAULTS.get(key)
+    if isinstance(default, (int, float)) and not isinstance(default, bool):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+    return value
+
+
+def num(cfg, key):
+    """Réglage numérique lu dans `cfg`, la valeur par défaut s'il est absent ou invalide."""
+    try:
+        return float(cfg.get(key, DEFAULTS[key]))
+    except (TypeError, ValueError):
+        return float(DEFAULTS[key])
 
 
 def last_change_by():

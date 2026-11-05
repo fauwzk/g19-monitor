@@ -78,8 +78,8 @@ try:
     from g19.lyrics import Lyrics
     from g19.media import MediaMonitor
     from g19.notifications import WindowsNotifications, flash_kind
-    from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, RECAP_SECONDS, Ctx, has_lyrics, ignored,
-                            volume_popup, popup_event, VOLUME_POPUP,
+    from g19.render import (CLAUDE_ROWS, FAN_CHIPS, GPU_VIEWS, recap_seconds, Ctx, has_lyrics, ignored,
+                            volume_popup, popup_event, popup_seconds,
                             render, render_away, render_fans, render_idle, render_menu, render_recap,
                             render_splash, theme_of, toast_candidates, current_toast,
                             overlay_toast, note_key, choosing)
@@ -357,12 +357,8 @@ def launched_by_agent():
     return any(os.environ.get(k) for k in AGENT_ENV)
 
 
-BACK_AFTER_GAME = 5      # s après la fin de la partie (sans récapitulatif) avant de revenir
-
-
 TOAST_LOG = "toast_log.json"
 TOAST_LOG_SIZE = 20
-CLAUDE_REMIND = 600       # s d'attente avant le premier rappel, puis entre deux rappels
 
 
 def load_toast_log():
@@ -428,8 +424,8 @@ def open_toast(c, n, page, pages):
 
 
 def claude_reminder(c, now, reminded):
-    """Session Claude qui attend ta réponse depuis CLAUDE_REMIND s : bandeau, puis de
-    nouveau toutes les CLAUDE_REMIND s. True quand un rappel part (le clavier clignote)."""
+    """Session Claude qui attend ta réponse depuis claude_remind_minutes : bandeau,
+    puis de nouveau au même rythme. True quand un rappel part (le clavier clignote)."""
     if not c.settings.get("claude_reminders", True):
         return False
     waiting = {s.session_id: s for s in c.sessions if s.state == "waiting"}
@@ -437,7 +433,8 @@ def claude_reminder(c, now, reminded):
         if sid not in waiting:
             del reminded[sid]
     for sid, s in waiting.items():
-        if (s.age or 0) >= CLAUDE_REMIND and now - reminded.get(sid, 0) >= CLAUDE_REMIND:
+        every = max(60.0, settings.num(c.settings, "claude_remind_minutes") * 60)
+        if (s.age or 0) >= every and now - reminded.get(sid, 0) >= every:
             reminded[sid] = now
             minutes = int((s.age or 0) // 60)
             msg = (s.message or "").strip()
@@ -643,6 +640,9 @@ def run():
     recap = None            # (partie terminée, affiché depuis) : récapitulatif de fin de partie
     before_game = None      # page affichée avant l'ouverture automatique de la page en jeu
     left_game_at = None     # fin du jeu (plus de FPS), pour revenir même sans récapitulatif
+    last_key = time.time()  # dernière touche du G19 (défilement auto, retour à une page)
+    last_cycle = returned_at = 0.0
+    mode = "page"           # ce que montre l'écran (page, menu, idle…)
     pattern_at = None       # mire de réglage de l'écran affichée depuis
     color_test = None       # (effet, "#rrggbb", fin) : couleur essayée depuis l'utilitaire
     last_frame, render_error_at = None, 0.0
@@ -822,17 +822,18 @@ def run():
                 last_ended = c.games.ended
                 if last_ended and cfg.get("game_recap", True):
                     recap = (last_ended[0], now)
-            if recap and now - recap[1] > RECAP_SECONDS:
+            if recap and recap_seconds(cfg) and now - recap[1] > recap_seconds(cfg):
                 recap = None
                 page, before_game = page_after_game(page, before_game, cfg, pages), None
             elif before_game and not recap and left_game_at and c.games.session is None and \
-                    now - left_game_at > BACK_AFTER_GAME:
+                    now - left_game_at > settings.num(cfg, "back_after_game_seconds"):
                 # partie finie sans récapitulatif (option coupée, partie trop courte) ; pas
                 # pendant un alt-tab : la session de jeu existe alors encore
                 page, before_game = page_after_game(page, before_game, cfg, pages), None
             clock.lap("pages et jeu")
             for b in [*lcd.pressed(), *keys.pressed()]:
                 c.away.poke(now)
+                last_key = now
                 note_key(b, now)            # la pastille de la touche s'allume un instant
                 if pattern_at:
                     pattern_at = None           # n'importe quelle touche ferme la mire
@@ -865,6 +866,7 @@ def run():
                         menu.update_status = c.updater.status if c.updater else ""
                         profs = mixer.profiles(c)
                         menu.audio_active = c.volume.active_profile(profs)
+                        menu.dnd = c.dnd.active if c.dnd and c.dnd.supported else None
                         menu.show(cfg, page_action(page, c), profs,
                                   c.gpu.game["name"] if c.gpu.game else None)
                     continue
@@ -918,6 +920,8 @@ def run():
                                 rtss.set_blacklist(cfg["game_blacklist"])
                                 c.saved_event = (f"{cmd[1]} n'est plus un jeu",
                                                  "retrait : utilitaire → Pages", now)
+                    elif cmd == ("dnd",) and c.dnd:
+                        c.dnd.toggle()             # « Ne pas déranger » de Windows
                     elif cmd and cmd[0] == "update":
                         c.updater.check_now()
                         c.saved_event = ("Mises à jour", "vérification sur GitHub…", time.time())
@@ -1016,6 +1020,24 @@ def run():
                             launch(ev["url"])
                         except OSError as e:
                             log.warning("ouverture du lien impossible : %s", e)
+            # sans toucher au G19 : menu refermé, pages qui défilent, retour à une page
+            quiet = now - last_key
+            close_after = settings.num(cfg, "menu_close_seconds")
+            if close_after and quiet >= close_after and (
+                    cover.open or menu.open or fan_panel is not None):
+                cover.open = menu.open = False
+                fan_panel = None
+            free = not (cover.open or menu.open or fan_panel is not None or recap or
+                        c.away.summary or (c.away.active and cfg.get("idle_screen", True))
+                        or choosing(c, page))
+            cycle = settings.num(cfg, "auto_cycle_seconds")
+            back = settings.num(cfg, "return_page_minutes")
+            target = cfg.get("return_page") or "system"
+            if free and cycle and len(pages) > 1 and                     (not in_game or cfg.get("auto_cycle_in_game", False)) and                     now - max(last_key, last_cycle) >= cycle:
+                page = pages[(pages.index(page) + 1) % len(pages)] if page in pages else pages[0]
+                last_cycle = now
+            elif free and back and not cycle and not in_game and quiet >= back * 60 and                     target in pages and page != target and last_key > returned_at:
+                page, returned_at = target, now
             # la session choisie reste visible ; la liste défile avec elle
             c.claude_sel = max(0, min(c.claude_sel, len(c.sessions) - 1))
             if c.claude_sel < c.scroll:
@@ -1093,7 +1115,7 @@ def run():
                 elif c.away.summary:
                     frame_img = render_away(c, c.away.summary, now)
                 elif c.away.active and cfg.get("idle_screen", True):
-                    frame_img = render_idle(c, now)
+                    frame_img = render_idle(c, now, page)
                 else:
                     frame_img = render(page, c, now, toast=False)
                 last_frame = frame_img
@@ -1131,8 +1153,11 @@ def run():
             frame_img = screen.dither(frame_img, cfg)     # dégradés sans bandes en 16 bits
             # pendant la fenêtre de volume, au moins 30 images/s pour que la barre glisse
             lcd_step = 1 / cfg["fps"]
+            off_after = settings.num(cfg, "idle_off_minutes")
+            if off_after and c.away.active and cfg.get("idle_screen", True) and                     now - c.away.since >= off_after * 60 and mode == "idle":
+                lcd_step = 1.0              # écran noir : une image par seconde suffit
             pop = popup_event(c, cfg)
-            if pop and now - pop[1] < VOLUME_POPUP:
+            if pop and now - pop[1] < popup_seconds(cfg):
                 lcd_step = min(lcd_step, 1 / 30)
             # le G19 garde son rythme ; l'aperçu « en direct » de l'utilitaire, lui, reçoit
             # jusqu'à 60 images/s tant qu'il est ouvert (la boucle tourne alors plus vite)

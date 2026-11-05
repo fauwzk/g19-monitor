@@ -5,6 +5,8 @@ import ctypes
 import time
 from ctypes import wintypes
 
+from . import settings
+
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32")
 powrprof = ctypes.WinDLL("powrprof")
@@ -89,7 +91,8 @@ class Away:
     def update(self, c, now, candidates):
         """Toutes les secondes. `candidates` : les bandeaux connus (render.toast_candidates)."""
         cfg = c.settings
-        if self.summary and now - self.summary[3] > SUMMARY_SECONDS:
+        keep = settings.num(cfg, "away_summary_seconds")
+        if self.summary and keep and now - self.summary[3] > keep:
             self.summary = None
         if not cfg.get("idle_screen", True) and not cfg.get("away_summary", True):
             self.since = None
@@ -97,13 +100,15 @@ class Away:
         try:
             locked = is_locked()
             idle = min(idle_seconds(), now - self._poke)
-            busy = bool(c.gpu and c.gpu.game) or display_required()
+            busy = bool(c.gpu and c.gpu.game) or (
+                display_required() and not cfg.get("idle_in_video", False))
         except OSError:
             return
-        away = locked or (idle >= cfg.get("idle_minutes", 5) * 60 and not busy)
+        lock_now = locked and cfg.get("idle_on_lock", True)
+        away = lock_now or (idle >= settings.num(cfg, "idle_minutes") * 60 and not busy)
         self.locked = locked
         if away and self.since is None:
-            self._start(c, now - (0 if locked else idle), candidates)
+            self._start(c, now - (0 if lock_now else idle), candidates)
         elif not away and self.since is not None:
             self._stop(cfg, now)
         if self.since is not None:

@@ -178,6 +178,29 @@ HEAD_TEXT, HEAD_MUTED, HEAD_ACCENT = TEXT, MUTED, ACCENT   # texte sur la barre 
 _dynamic = {"accent": None, "key": None}
 
 
+def apply_timing(cfg):
+    """Temps réglables dans l'utilitaire (défilement des titres, fondus, paroles, fenêtre de
+    volume), relus à chaque image."""
+    global MARQUEE_PAUSE, MARQUEE_SPEED, ART_FADE, LYRICS_OFFSET, VOLUME_POPUP
+    from .settings import num
+    MARQUEE_SPEED = min(200.0, max(5.0, num(cfg, "marquee_speed")))
+    MARQUEE_PAUSE = min(30.0, max(0.0, num(cfg, "marquee_pause")))
+    ART_FADE = max(0.001, num(cfg, "art_fade_ms") / 1000)
+    LYRICS_OFFSET = num(cfg, "lyrics_offset_ms") / 1000
+    VOLUME_POPUP = min(15.0, max(0.5, num(cfg, "volume_popup_seconds")))
+
+
+def recap_seconds(cfg):
+    """Durée du récapitulatif de partie (0 : jusqu'à une touche)."""
+    from .settings import num
+    return max(0.0, num(cfg, "game_recap_seconds"))
+
+
+def popup_seconds(cfg):
+    from .settings import num
+    return min(15.0, max(0.5, num(cfg, "volume_popup_seconds")))
+
+
 def apply_theme(c):
     """Thème des réglages ; le thème dynamique prend en plus la couleur de la pochette en
     cours (ou du jeu lancé) comme accent, et en teinte légèrement les fonds."""
@@ -185,6 +208,7 @@ def apply_theme(c):
     name = theme_of(c.settings)
     set_theme(name)
     ANIMATE = bool(c.settings.get("animations", True))
+    apply_timing(c.settings)
     # formes lissées, sauf pour le thème Pixel (ses escaliers sont voulus)
     smooth.enabled = bool(c.settings.get("smooth_shapes", True)) and name != "pixel"
     _wall["on"] = bool(c.settings.get("wallpaper_bg"))
@@ -4192,7 +4216,7 @@ def render_menu(menu, c, t=None):
                fill=TEXT if selected else dim(TEXT, 0.8), anchor="lm")
         value = menu.value_text(item, cfg)
         if kind == "bool":
-            on = bool(cfg.get(key))
+            on = bool(menu.dnd) if key == "dnd" else bool(cfg.get(key))
             pw = 40
             d.rounded_rectangle((W - 14 - pw, y + 6, W - 14, y + 20), 7,
                                 fill=OK if on else TRACK)
@@ -4865,9 +4889,10 @@ def render_recap(c, rec, t, shown_at):
     elif len(curve) >= 2:
         d.text((12, 200), "FPS", font=font(9, True), fill=MUTED)
         sparkline(d, 36, 199, W - 48, 30, curve, ACCENT, vmax=max(curve) * 1.15, panel=None)
-    # temps restant avant fermeture automatique
-    left = max(0.0, 1 - (t - shown_at) / RECAP_SECONDS)
-    d.rectangle((0, H - 3, int(W * left), H - 1), fill=ACCENT)
+    keep = recap_seconds(c.settings)
+    if keep:   # temps restant avant fermeture automatique
+        left = max(0.0, 1 - (t - shown_at) / keep)
+        d.rectangle((0, H - 3, int(W * left), H - 1), fill=ACCENT)
     return postprocess(img)
 
 
@@ -4904,22 +4929,72 @@ def idle_daily(d, day, cy):
         x += w + 16
 
 
-def render_idle(c, t):
-    """PC verrouillé ou inactif : grande horloge, météo, et ce qui est arrivé entre-temps."""
+def render_idle(c, t, page=None):
+    """PC verrouillé ou inactif : selon le réglage, grande horloge (avec météo et ce qui est
+    arrivé entre-temps), bilan du jour, média, ou la page affichée ; puis, après un moment,
+    assombri ou noir."""
+    from .settings import num
+    cfg = c.settings
+    away = c.away
+    idle_for = t - away.since if away and away.active else 0.0
+    off = num(cfg, "idle_off_minutes")
+    if off and idle_for >= off * 60:
+        return Image.new("RGB", (W, H))        # écran noir
+    style = cfg.get("idle_style", "clock")
+    if style == "media" and not (c.media and c.media.title and c.media.playing):
+        style = "clock"
+    if style in ("daily", "media", "page"):
+        img = render({"daily": "daily", "media": "media"}.get(style, page or "system"),
+                     c, t)
+    else:
+        img = _idle_clock(c, t, style)
+    if cfg.get("idle_drift", False):
+        # léger décalage chaque minute : rien ne reste figé au même endroit
+        m = int(t // 60)
+        dx, dy = (m * 7) % 11 - 5, (m * 5) % 9 - 4
+        out = Image.new(img.mode, img.size, img.getpixel((0, 0)))
+        out.paste(img, (dx, dy))
+        img = out
+    dim_after = num(cfg, "idle_dim_minutes")
+    if dim_after and idle_for >= dim_after * 60:
+        level = min(100.0, max(0.0, num(cfg, "idle_dim_level"))) / 100
+        k = min(1.0, (idle_for - dim_after * 60) / 2.0)      # fondu de 2 s
+        img = Image.blend(img, Image.new(img.mode, img.size), (1 - level) * k)
+    return img
+
+
+def _idle_clock(c, t, style):
     apply_theme(c)
+    cfg = c.settings
     img = canvas()
     d = Draw(img)
     away = c.away
     lt = time.localtime(t)
-    d.text((W // 2, 74), time.strftime("%H:%M", lt), font=font(72, True), fill=TEXT, anchor="mm")
+    minimal = style == "minimal"
+    cy = 100 if minimal else 74
+    if style == "seconds":
+        hm, ss = time.strftime("%H:%M", lt), time.strftime(":%S", lt)
+        f1, f2 = font(62, True), font(30, True)
+        w1 = d.textlength(hm, font=f1)
+        x = W / 2 - (w1 + 4 + d.textlength(":00", font=f2)) / 2   # largeur fixe : pas de saut
+        base = cy + 23                                              # lignes de base alignées
+        d.text((x, base), hm, font=f1, fill=TEXT, anchor="ls")
+        d.text((x + w1 + 4, base), ss, font=f2, fill=MUTED, anchor="ls")
+    else:
+        d.text((W // 2, cy), time.strftime("%H:%M", lt), font=font(80 if minimal else 72, True),
+               fill=TEXT, anchor="mm")
+    by = cy + 42
     sec_w = 120 * (lt.tm_sec + t % 1) / 60
-    d.rounded_rectangle((W // 2 - 60, 116, W // 2 + 60, 118), 1, fill=TRACK)
-    d.rounded_rectangle((W // 2 - 60, 116, W // 2 - 60 + sec_w, 118), 1, fill=ACCENT)
+    d.rounded_rectangle((W // 2 - 60, by, W // 2 + 60, by + 2), 1, fill=TRACK)
+    d.rounded_rectangle((W // 2 - 60, by, W // 2 - 60 + sec_w, by + 2), 1, fill=ACCENT)
     date = f"{JOURS[lt.tm_wday].capitalize()} {lt.tm_mday} {MOIS[lt.tm_mon - 1]}"
-    d.text((W // 2, 134), date, font=font(15), fill=MUTED, anchor="mm")
+    d.text((W // 2, by + 18), date, font=font(15), fill=MUTED, anchor="mm")
+    if minimal:
+        return overlay_toast(postprocess(img), c, None, t)
 
-    cur = c.weather.current() if c.weather else None
-    day = c.daily.day(t) if c.daily else None
+    show_weather = cfg.get("idle_weather", True)
+    cur = c.weather.current() if c.weather and show_weather else None
+    day = c.daily.day(t) if c.daily and show_weather else None
     if day and day["pc"] >= 60 and (not cur or int(t / 8) % 2):
         idle_daily(d, day, 162)       # en alternance avec la météo : le bilan du jour
     elif cur:
@@ -4935,29 +5010,30 @@ def render_idle(c, t):
         d.text((x + 38 + d.textlength(temp, font=f1), 163), label, font=f2, fill=MUTED,
                anchor="lm")
 
-    counts = away.counts() if away else {}
-    y0 = 196
-    panel(d, (6, y0, W - 6, 232), 6)
-    if not counts:
-        state = "verrouillé" if away and away.locked else "au repos"
-        since = f" depuis {fmt_away(t - away.since)}" if away and away.active else ""
-        d.text((W // 2, 214), f"PC {state}{since} · rien de nouveau", font=font(11),
-               fill=MUTED, anchor="mm")
-    else:
-        chips = sorted(counts.items(), key=lambda kv: AWAY_ORDER.index(kv[0])
-                       if kv[0] in AWAY_ORDER else 99)
-        first = {it["source"]: it for it in away.items}
-        x = 14
-        for src, n in chips:
-            col = away_color(first[src])
-            text = fit(d, f"{src} {n}", font(11, True), 140)   # nom d'appli : une ligne
-            w = d.textlength(text, font=font(11, True)) + 18
-            if x + w > W - 12:
-                d.text((W - 14, 214), "…", font=font(12, True), fill=MUTED, anchor="rm")
-                break
-            d.ellipse((x, 210, x + 8, 218), fill=col)
-            d.text((x + 12, 214), text, font=font(11, True), fill=TEXT, anchor="lm")
-            x += w
+    if cfg.get("idle_events", True):
+        counts = away.counts() if away else {}
+        y0 = 196
+        panel(d, (6, y0, W - 6, 232), 6)
+        if not counts:
+            state = "verrouillé" if away and away.locked else "au repos"
+            since = f" depuis {fmt_away(t - away.since)}" if away and away.active else ""
+            d.text((W // 2, 214), f"PC {state}{since} · rien de nouveau", font=font(11),
+                   fill=MUTED, anchor="mm")
+        else:
+            chips = sorted(counts.items(), key=lambda kv: AWAY_ORDER.index(kv[0])
+                           if kv[0] in AWAY_ORDER else 99)
+            first = {it["source"]: it for it in away.items}
+            x = 14
+            for src, n in chips:
+                col = away_color(first[src])
+                text = fit(d, f"{src} {n}", font(11, True), 140)   # nom d'appli : une ligne
+                w = d.textlength(text, font=font(11, True)) + 18
+                if x + w > W - 12:
+                    d.text((W - 14, 214), "…", font=font(12, True), fill=MUTED, anchor="rm")
+                    break
+                d.ellipse((x, 210, x + 8, 218), fill=col)
+                d.text((x + 12, 214), text, font=font(11, True), fill=TEXT, anchor="lm")
+                x += w
     n = current_toast(c, None, t)
     if n:
         slide_toast(img, n, c.discord.avatars if c.discord else None, t,
@@ -4984,7 +5060,7 @@ def away_lines(items):
 
 def render_away(c, summary, t):
     """Au retour : tout ce qui est arrivé pendant l'absence ; une touche pour fermer."""
-    from .away import SUMMARY_SECONDS
+    from .settings import num
 
     apply_theme(c)
     img = canvas()
@@ -5016,8 +5092,10 @@ def render_away(c, summary, t):
     if len(lines) > rows:
         d.text((W - 10, 232), f"+{len(lines) - rows} autres", font=font(9), fill=MUTED,
                anchor="rb")
-    left = max(0.0, 1 - (t - shown_at) / SUMMARY_SECONDS)
-    d.rectangle((0, H - 3, int(W * left), H - 1), fill=ACCENT)
+    keep = num(c.settings, "away_summary_seconds")
+    if keep:
+        left = max(0.0, 1 - (t - shown_at) / keep)
+        d.rectangle((0, H - 3, int(W * left), H - 1), fill=ACCENT)
     return postprocess(img)
 
 

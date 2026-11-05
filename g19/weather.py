@@ -47,6 +47,11 @@ CODES = {
 }
 
 
+def _ahead():
+    from . import settings
+    return settings.get("rain_ahead_minutes") * 60 or RAIN_AHEAD
+
+
 def rain_soon(data, now):
     """(minutes avant la pluie, mm sur le premier quart d'heure pluvieux) s'il ne pleut pas
     maintenant mais qu'il va pleuvoir dans les RAIN_AHEAD s ; None sinon."""
@@ -56,14 +61,14 @@ def rain_soon(data, now):
     if now_mm >= RAIN_MM:
         return None
     for t, p in steps:
-        if now < t <= now + RAIN_AHEAD and p >= RAIN_MM:
+        if now < t <= now + _ahead() and p >= RAIN_MM:
             return max(5, int(round((t - now) / 300.0)) * 5), p
     return None
 
 
 def raining_or_soon(data, now):
     m = (data or {}).get("minutely_15") or {}
-    return any(t <= now + RAIN_AHEAD and t + 900 > now and (p or 0) >= RAIN_MM
+    return any(t <= now + _ahead() and t + 900 > now and (p or 0) >= RAIN_MM
                for t, p in zip(m.get("time") or [], m.get("precipitation") or []))
 
 

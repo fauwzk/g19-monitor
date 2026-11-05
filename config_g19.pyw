@@ -78,16 +78,20 @@ KEYS = {Qt.Key_Left: "left", Qt.Key_Right: "right", Qt.Key_Up: "up", Qt.Key_Down
         Qt.Key_Backspace: "cancel", Qt.Key_M: "menu"}
 # page → (icône Segoe Fluent Icons, phrase sous le titre)
 PAGE_INFO = {
-    "Pages": ("\uE8A9", "Ce que le G19 affiche, dans quel ordre, et au démarrage."),
-    "Apparence": ("\uE790", "Thème, image de l'écran et mode nuit."),
-    "Bandeaux": ("\uE8BD", "Les messages qui glissent en bas de l'écran du G19."),
+    "Pages": ("\uE8A9", "Ce que le G19 affiche, dans quel ordre, au démarrage, sans toucher "
+                          "aux touches et pendant les jeux."),
+    "Apparence": ("\uE790", "Thème, animations, fenêtres par-dessus l'écran et réglage de "
+                              "l'image."),
+    "Repos et nuit": ("\uE708", "Quand le PC est inactif ou verrouillé, au retour, et la nuit."),
+    "Bandeaux": ("\uE8BD", "Les messages qui glissent en bas de l'écran du G19, rangés par "
+                            "sujet."),
     "Clavier et alertes": ("\uE765", "Le rétroéclairage du clavier comme voyant, et les "
                                       "seuils d'alerte."),
     "Audio": ("\uE7F5", "Profils audio : casque, haut-parleurs… à changer d'un geste."),
     "Raccourcis": ("\uE71B", "Les applis à ouvrir depuis le menu du G19."),
     "Services": ("\uE774", "Météo, réseau, Home Assistant (carburant, maison), Agenda Google, "
                             "Discord et Steam."),
-    "Système": ("\uE713", "L'appli, le démarrage, les ventilateurs et la sauvegarde."),
+    "Système": ("\uE713", "L'appli, les mises à jour, les ventilateurs et la sauvegarde."),
 }
 
 
@@ -166,7 +170,8 @@ class ConfigApp(QMainWindow):
 
         for title, builders in (
                 ("Pages", (self._tab_pages,)),
-                ("Apparence", (self._tab_display, self._tab_screen, self._tab_night)),
+                ("Apparence", (self._tab_display, self._tab_screen)),
+                ("Repos et nuit", (self._tab_idle, self._tab_night)),
                 ("Bandeaux", (self._tab_toasts,)),
                 ("Clavier et alertes", (self._tab_alerts,)),
                 ("Audio", (self._tab_audio,)),
@@ -345,7 +350,8 @@ class ConfigApp(QMainWindow):
 
     def spin(self, key, card, text, lo, hi, step=1, suffix="", hint=None):
         w = spin(lo, hi, step, suffix)
-        w.setValue(int(self.s.get(key) or lo))
+        v = self.s.get(key)
+        w.setValue(int(lo if v is None else v))
         card.row(text, w, hint)
         self.fields[key] = bind_spin(w)
         return w
@@ -364,6 +370,10 @@ class ConfigApp(QMainWindow):
         card.row(text, c, hint)
         self.fields[key] = f
         return c
+
+    def timing(self, key, card, text, hint=None, width=170):
+        """Liste de durées (settings.CHOICES), avec la valeur actuelle si elle est perso."""
+        return self.choice(key, card, text, settings.choices(key, self.s.get(key)), hint, width)
 
     def text(self, key, card, text, width=240, hint=None, extra=None):
         e = line_edit(self.s.get(key) or "", width)
@@ -437,9 +447,27 @@ class ConfigApp(QMainWindow):
                                              lambda v: (self.remember if v else fixed).setChecked(True))
         self.fields["start_page"] = bind_combo(start, "system")
 
-        card = self._card(lay, "Au lancement d'un jeu")
-        self.choice("game_page", card, "Afficher la page", GAME_PAGES, width=170,
+        card = self._card(lay, "Sans toucher au G19")
+        self.timing("auto_cycle_seconds", card, "Pages qui défilent seules",
+                    "Page suivante à ce rythme ; une touche met en pause pour la même durée.")
+        self.toggle("auto_cycle_in_game", card, "    aussi pendant une partie")
+        self.timing("return_page_minutes", card, "Retour à une page après",
+                    "Sans touche depuis ce temps (quand les pages ne défilent pas seules).")
+        self.choice("return_page", card, "    laquelle", list(TITLES.items()), None, 170)
+        self.timing("menu_close_seconds", card, "Menu et liste des écrans fermés après",
+                    "Sans touche depuis ce temps.")
+
+        card = self._card(lay, "Jeux")
+        self.choice("game_page", card, "Page au lancement d'un jeu", GAME_PAGES, width=170,
                     hint="Retour à la page d'avant une fois la partie finie.")
+        self.toggle("game_recap", card, "Récapitulatif à la fin d'une partie",
+                    "Durée, FPS, températures et succès débloqués.")
+        self.timing("game_recap_seconds", card, "    fermé tout seul après")
+        self.timing("back_after_game_seconds", card, "Sans récapitulatif, retour après",
+                    "Partie finie (récapitulatif coupé ou partie trop courte).")
+        self.timing("game_grace_seconds", card, "Jeu considéré fermé après",
+                    "Sans images depuis ce temps (alt-tab, chargement). Si le processus du "
+                    "jeu a disparu, c'est immédiat.")
         bl = line_edit(", ".join(self.s.get("game_blacklist") or []), 260,
                        placeholder="obs, …")
         card.row("Jamais traités comme des jeux", bl,
@@ -495,6 +523,8 @@ class ConfigApp(QMainWindow):
                     "avec le thème Aero.")
         self.slider("wallpaper_dim", card, "Assombrissement du fond", 0, 90, 5,
                     hint="Plus haut : texte plus lisible, fond plus discret.")
+
+        card = self._card(lay, "Animations")
         self.toggle("animations", card, "Animations",
                     "Entre les pages (◄ ►) ; menus et écrans apparaissent en fondu.")
         style = combo([(k, v[0].capitalize()) for k, v in ANIM_STYLES.items()], 130)
@@ -507,6 +537,12 @@ class ConfigApp(QMainWindow):
                  "Passe le G19 à la page suivante avec l'animation choisie.")
         self.fields["animation_style"] = bind_combo(style, "slide")
         self.fields["animation_speed"] = bind_combo(speed, "normal")
+        self.timing("art_fade_ms", card, "Fondu entre deux pochettes")
+        self.timing("marquee_speed", card, "Titres trop longs : vitesse de défilement",
+                    "Ils défilent au lieu d'être coupés.")
+        self.timing("marquee_pause", card, "    pause avant chaque tour")
+
+        card = self._card(lay, "Barre du haut et fenêtres")
         self.toggle("headset_mic", card, "Micro du casque dans la barre du haut",
                     "Casque HyperX sans fil : micro barré en rouge quand tu l'as coupé avec le "
                     "bouton du casque.")
@@ -516,17 +552,23 @@ class ConfigApp(QMainWindow):
         self.toggle("mic_popup", card, "Fenêtre du micro",
                     "Quand le micro est coupé ou rétabli (Windows ou bouton du casque HyperX), "
                     "son état s'affiche quelques instants par-dessus l'écran du G19.")
-        self.spin("fps", card, "Images par seconde", 2, 60,
-                  hint="Jusqu'à 60. Une page fixe ne coûte presque rien ; la fluidité réelle "
-                       "s'affiche dans le menu du G19.")
-        card = self._card(lay, "Jauges et encarts")
+        self.timing("volume_popup_seconds", card, "    affichées pendant",
+                    "Après le dernier changement.")
+
+        card = self._card(lay, "Contenu des pages")
         self.spin("gpu_power_max", card, "Puissance max. du GPU", 100, 700, 5, "W",
                   "Échelle de la jauge Puissance de l'écran GPU.")
-        self.spin("claude_strip_seconds", card, "Encart Claude masqué après", 0, 600, 5, "s",
-                  "Après la fin du dernier agent, l'encart s'efface (0 = jamais).")
+        self.timing("claude_strip_seconds", card, "Encart Claude masqué après",
+                    "Après la fin du dernier agent, l'encart s'efface.")
+        self.spin("lyrics_offset_ms", card, "Avance des paroles", -3000, 3000, 50, "ms",
+                  "Paroles en retard sur la musique : augmente ; en avance : baisse (négatif "
+                  "possible).")
 
     def _tab_screen(self, lay):
         card = self._card(lay, "Image")
+        self.spin("fps", card, "Images par seconde", 2, 60,
+                  hint="Jusqu'à 60. Une page fixe ne coûte presque rien ; la fluidité réelle "
+                       "s'affiche dans le menu du G19 et sous l'aperçu.")
         self.slider("screen_brightness", card, "Luminosité", 50, 150, 5)
         self.slider("screen_contrast", card, "Contraste", 50, 150, 5)
         self.slider("screen_gamma", card, "Tons sombres (gamma)", 60, 160, 5,
@@ -565,56 +607,95 @@ class ConfigApp(QMainWindow):
         self.fields["screen_sharpen"].set(False)
 
     def _tab_toasts(self, lay):
+        card = self._card(lay, "Tous les bandeaux")
+        self.timing("toast_seconds", card, "Durée d'affichage",
+                    "Pendant qu'un bandeau est là : OK ouvre sa page, Annuler le ferme.")
+
         card = self._card(lay, "Messages")
         self.toggle("discord_toasts", card, "Messages Discord",
                     "Avec le nom du groupe ou du salon ; OK ouvre la conversation dans Discord.")
+        self.toggle("voice_toasts", card, "Arrivée / départ dans l'appel Discord")
         self.toggle("win_toasts", card, "Notifications Windows")
         e = line_edit(", ".join(self.s["notif_ignore"]), 260, placeholder="Sécurité Windows, …")
-        card.row("Applis ignorées", e, "Séparées par des virgules. Les notifs Discord sont "
-                                       "masquées d'office quand l'écran Discord est connecté.")
+        card.row("    applis ignorées", e, "Séparées par des virgules. Les notifs Discord sont "
+                                           "masquées d'office quand l'écran Discord est connecté.")
         self.fields["notif_ignore"] = Field(
             lambda: [a.strip() for a in e.text().split(",") if a.strip()],
             lambda v: e.setText(", ".join(v or [])))
-        self.spin("toast_seconds", card, "Durée d'affichage", 2, 30, suffix="s",
-                  hint="Pendant qu'un bandeau est là : OK ouvre sa page, Annuler le ferme.")
-        self.spin("day_recap_hour", card, "Bilan du jour à", 0, 23, suffix="h",
-                  hint="Temps sur le PC, en jeu et morceaux écoutés, une fois par jour ; OK "
-                       "ouvre la page Bilan (0 : aucun bandeau).")
-        card = self._card(lay, "Événements")
-        for key, text, hint in (
-                ("media_toasts", "Changement de musique / média", None),
-                ("pause_toasts", "Musique mise en pause ou relancée", None),
-                ("device_toasts", "Périphérique connecté ou retiré",
-                 "USB, Bluetooth et audio, avec la batterie quand il en a une."),
-                ("steam_toasts", "Ami Steam connecté ou qui lance un jeu",
-                 "Avec sa photo de profil, aux couleurs de Steam."),
-                ("achievements", "Succès Steam débloqué",
-                 "En jeu, avec son icône et sa rareté ; listés aussi à la fin de la partie. "
-                 "Clé API Steam et détails des jeux du profil publics."),
-                ("voice_toasts", "Arrivée / départ dans l'appel Discord", None),
-                ("stream_toasts", "Connexion en streaming à ce PC",
-                 "Moonlight (via Sunshine) ou Parsec, voyant rouge tant que ça dure."),
-                ("docker_toasts", "Conteneur Docker en panne",
-                 "Arrêté en erreur, ou qui redémarre en boucle (3 fois en 5 min)."),
-                ("rain_toasts", "Pluie dans peu de temps",
-                 "« Pluie dans ~30 min » quand il ne pleut pas encore (prévision au quart "
-                 "d'heure)."),
-                ("claude_reminders", "Rappel : Claude attend ta réponse",
-                 "Après 10 min, puis toutes les 10 min : bandeau et deux clignotements "
-                 "discrets. OK ouvre la session."),
-                ("fuel_toasts", "Carburant en rupture ou de retour", None),
-                ("page_toasts", "Page de nouveau disponible",
-                 "Discord et Docker sont masquées tant que l'appli est fermée."),
-                ("driver_toasts", "Nouveau pilote graphique AMD",
-                 "Rappel une fois par jour tant qu'il n'est pas installé.")):
-            self.toggle(key, card, text, hint)
-        card = self._card(lay, "PC au repos")
-        self.toggle("idle_screen", card, "Horloge quand le PC est verrouillé ou inactif",
-                    "Avec la météo et ce qui est arrivé entre-temps. Pas pendant un jeu ni une "
-                    "vidéo.")
-        self.spin("idle_minutes", card, "Inactif après", 1, 120, suffix="min")
-        self.toggle("away_summary", card, "Résumé « pendant ton absence » au retour")
-        self.spin("away_min_minutes", card, "Absence minimale", 0, 240, suffix="min")
+
+        card = self._card(lay, "Musique")
+        self.toggle("media_toasts", card, "Changement de musique / média")
+        self.toggle("pause_toasts", card, "Musique mise en pause ou relancée")
+
+        card = self._card(lay, "Jeux et Steam")
+        self.toggle("steam_toasts", card, "Ami Steam connecté ou qui lance un jeu",
+                    "Avec sa photo de profil, aux couleurs de Steam.")
+        self.toggle("achievements", card, "Succès Steam débloqué",
+                    "En jeu, avec son icône et sa rareté ; listés aussi à la fin de la partie. "
+                    "Clé API Steam et détails des jeux du profil publics.")
+        self.toggle("stream_toasts", card, "Connexion en streaming à ce PC",
+                    "Moonlight (via Sunshine) ou Parsec, voyant rouge tant que ça dure.")
+
+        card = self._card(lay, "Rappels")
+        self.toggle("claude_reminders", card, "Claude attend ta réponse",
+                    "Bandeau et deux clignotements discrets. OK ouvre la session.")
+        self.timing("claude_remind_minutes", card, "    après, puis toutes les",
+                    "Premier rappel après ce temps, puis au même rythme.")
+        self.toggle("rain_toasts", card, "Pluie dans peu de temps",
+                    "« Pluie dans ~30 min » quand il ne pleut pas encore.")
+        self.timing("rain_ahead_minutes", card, "    prévenir jusqu'à",
+                    "Avant le début de la pluie (prévision au quart d'heure, 2 h au plus).")
+        self.timing("day_recap_hour", card, "Bilan du jour à",
+                    "Temps sur le PC, en jeu et morceaux écoutés, une fois par jour ; OK "
+                    "ouvre la page Bilan.")
+        card.note("Le rappel avant un événement de l'agenda se règle avec l'Agenda Google "
+                  "(Services).")
+
+        card = self._card(lay, "PC et appareils")
+        self.toggle("device_toasts", card, "Périphérique connecté ou retiré",
+                    "USB, Bluetooth et audio, avec la batterie quand il en a une.")
+        self.toggle("sys_alerts", card, "Redémarrage en attente ou disque presque plein")
+        self.spin("disk_free_gb", card, "    disque presque plein sous", 1, 200, suffix="Go")
+        self.toggle("driver_toasts", card, "Nouveau pilote graphique AMD",
+                    "Rappel une fois par jour tant qu'il n'est pas installé.")
+
+        card = self._card(lay, "Services")
+        self.toggle("docker_toasts", card, "Conteneur Docker en panne",
+                    "Arrêté en erreur, ou qui redémarre en boucle (3 fois en 5 min).")
+        self.toggle("fuel_toasts", card, "Carburant en rupture ou de retour")
+        self.toggle("page_toasts", card, "Page de nouveau disponible",
+                    "Discord et Docker sont masquées tant que l'appli est fermée.")
+
+    def _tab_idle(self, lay):
+        card = self._card(lay, "Écran de repos")
+        self.toggle("idle_screen", card, "Quand le PC est verrouillé ou inactif",
+                    "Pas pendant un jeu. Une touche du G19 réveille seulement l'écran.")
+        self.timing("idle_minutes", card, "Inactif après",
+                    "Sans clavier ni souris (ni touche du G19) depuis ce temps.")
+        self.toggle("idle_on_lock", card, "Dès le verrouillage de Windows",
+                    "Sinon, le PC verrouillé attend lui aussi le délai d'inactivité.")
+        self.toggle("idle_in_video", card, "Même pendant une vidéo",
+                    "D'habitude, une vidéo plein écran (ou tout ce qui empêche la veille de "
+                    "Windows) retarde l'écran de repos.")
+        self.choice("idle_style", card, "Affichage", list(settings.IDLE_STYLES.items()),
+                    "Média : la page Média tant qu'un morceau joue. Garder la page : rien ne "
+                    "change, mais l'assombrissement et l'écran noir s'appliquent.", 280)
+        self.toggle("idle_weather", card, "Météo et bilan du jour sous l'horloge")
+        self.toggle("idle_events", card, "Ce qui est arrivé entre-temps, en bas")
+        self.toggle("idle_drift", card, "Décaler un peu l'écran chaque minute",
+                    "Quelques pixels, pour que rien ne reste figé au même endroit.")
+        card = self._card(lay, "Après un moment au repos")
+        self.timing("idle_dim_minutes", card, "Assombrir après",
+                    "Compté depuis l'apparition de l'écran de repos.")
+        self.timing("idle_dim_level", card, "Luminosité une fois assombri", width=120)
+        self.timing("idle_off_minutes", card, "Écran noir après",
+                    "Une image par seconde seulement : presque rien ne tourne. Une touche "
+                    "rallume.")
+        card = self._card(lay, "Au retour")
+        self.toggle("away_summary", card, "Résumé « pendant ton absence »")
+        self.timing("away_min_minutes", card, "Absence minimale",
+                    "Plus court : pas de résumé.")
+        self.timing("away_summary_seconds", card, "    fermé tout seul après")
 
     def _tab_night(self, lay):
         card = self._card(lay, "Mode nuit")
@@ -667,6 +748,8 @@ class ConfigApp(QMainWindow):
             s.setValue(int(values[key]))
             card.row(text, s)
         card.note("0 = désactivé.")
+        self.timing("alert_sustain_seconds", card, "Alerte après",
+                    "Au-dessus du seuil depuis ce temps : pas de fausse alerte sur un pic.")
         self.fields["alerts"] = Field(lambda: {k: s.value() for k, s in spins.items()},
                                       lambda v: [spins[k].setValue(int(x)) for k, x in v.items()
                                                  if k in spins])
@@ -706,10 +789,6 @@ class ConfigApp(QMainWindow):
         card.note("Dans Logitech Gaming Software, « Autoriser les jeux à contrôler l'éclairage » "
                   "doit être coché.")
 
-        card = self._card(lay, "Système et jeux")
-        self.toggle("sys_alerts", card, "Redémarrage en attente ou disque presque plein")
-        self.spin("disk_free_gb", card, "Disque presque plein sous", 1, 200, suffix="Go")
-        self.toggle("game_recap", card, "Récapitulatif à la fin d'une partie")
 
     def _test_backlight(self, test, color_key):
         if not instance.is_running():
@@ -1111,9 +1190,9 @@ class ConfigApp(QMainWindow):
                          self.button("Ouvrir Google Agenda", lambda: webbrowser.open(
                              "https://calendar.google.com/calendar/r/settings")), stretch=True))
         self.agenda_state = card.widget(label("", "hint", wrap=True))
-        self.spin("agenda_remind", card, "Rappel avant un événement", 0, 120, suffix="min",
-                  hint="Bandeau sur le G19 (0 : aucun) ; OK rejoint la réunion Meet, Zoom ou "
-                       "Teams s'il y a un lien.")
+        self.timing("agenda_remind", card, "Rappel avant un événement",
+                    "Bandeau sur le G19 ; OK rejoint la réunion Meet, Zoom ou Teams s'il y a "
+                    "un lien.")
 
     def _save_agenda(self):
         from g19 import agenda
@@ -1264,25 +1343,21 @@ class ConfigApp(QMainWindow):
             t.toggled.connect(lambda on, m=module, w=t: self._apply_flag(m, w, on))
             card.row(text, t, hint)
 
+        card = self._card(lay, "Mises à jour")
+        self.toggle("auto_update", card, "Se mettre à jour depuis GitHub",
+                    "S'il y a des modifications locales, rien n'est écrasé.")
+        self.timing("update_check_minutes", card, "    vérifier toutes les")
+        card.row("Vérification", self.button("Vérifier maintenant", self._check_update))
+
         card = self._card(lay, "Ventilateurs carte mère (via LibreHardwareMonitor)")
         self.choice("fan_profile", card, "Profil", list(FAN_LABELS.items()),
                     "Hors « auto », vitesse fixe (30 % minimum) ; la pompe n'est jamais touchée.",
                     170)
         self.spin("fan_safe_cpu", card, "Retour en auto si CPU ≥", 60, 100, suffix="°C")
         self.spin("fan_safe_gpu", card, "ou hotspot GPU ≥", 60, 100, suffix="°C")
-        self.spin("fan_recover_seconds", card, "Retour au profil, refroidi depuis", 10, 900, 10,
-                  "s", "Le profil revient seul une fois CPU et GPU 8 °C sous les seuils pendant "
-                       "cette durée. Auto aussi à la fermeture de l'appli.")
-
-        card = self._card(lay, "Sources de données")
-        self.sources = card.widget(label("…"))
-        self.sources.setFont(QFont("Consolas", 9))
-        card.widget(hbox(self.button("Journal", lambda: self._open(APP_DIR / "g19.log")),
-                         self.button("Données", lambda: self._open(config.DATA_DIR)),
-                         self.button("Historique des débits",
-                                     lambda: self._open(config.DATA_DIR / "speedtests.csv")),
-                         self.button("Dossier de l'appli", lambda: self._open(APP_DIR)),
-                         stretch=True))
+        self.timing("fan_recover_seconds", card, "Retour au profil, refroidi depuis",
+                    "Le profil revient seul une fois CPU et GPU 8 °C sous les seuils pendant "
+                    "cette durée. Auto aussi à la fermeture de l'appli.")
 
         card = self._card(lay, "Sauvegarde des réglages")
         self.bk_secrets, self.bk_history = Toggle(True), Toggle(True)
@@ -1294,10 +1369,15 @@ class ConfigApp(QMainWindow):
                  "À garder avant une réinstallation. À l'import, l'état actuel est d'abord "
                  "sauvegardé, puis l'appli redémarre.")
 
-        card = self._card(lay, "Mises à jour")
-        self.toggle("auto_update", card, "Se mettre à jour depuis GitHub",
-                    "Toutes les 15 min. S'il y a des modifications locales, rien n'est écrasé.")
-        card.row("Vérification", self.button("Vérifier maintenant", self._check_update))
+        card = self._card(lay, "Sources de données")
+        self.sources = card.widget(label("…"))
+        self.sources.setFont(QFont("Consolas", 9))
+        card.widget(hbox(self.button("Journal", lambda: self._open(APP_DIR / "g19.log")),
+                         self.button("Données", lambda: self._open(config.DATA_DIR)),
+                         self.button("Historique des débits",
+                                     lambda: self._open(config.DATA_DIR / "speedtests.csv")),
+                         self.button("Dossier de l'appli", lambda: self._open(APP_DIR)),
+                         stretch=True))
 
     # --- actions ---
 

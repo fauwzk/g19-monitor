@@ -20,6 +20,13 @@ HISTORY_FILE = "games.json"
 HISTORY_MAX = 300
 MIN_SESSION = 60      # s : en dessous, la session n'est pas gardée
 GRACE = 90            # s sans images avant de considérer le jeu fermé (alt-tab, chargement…)
+
+
+def _grace():
+    from . import settings
+    return settings.get("game_grace_seconds") or GRACE
+
+
 GONE = 3              # s sans images quand son processus n'existe plus : fermé pour de bon
 COVER = (84, 126)
 THUMB = (30, 45)
@@ -155,12 +162,12 @@ class GameTracker:
             self._end()
             self.session = Session(game, self.catalog.identify(game["path"], game["name"]), now)
             last = self.history[0] if self.history else None
-            if last and last["exe"] == game["path"] and now - (last["start"] + last["duration"]) < GRACE:
+            if last and last["exe"] == game["path"] and now - (last["start"] + last["duration"]) < _grace():
                 # même jeu juste après une relance de l'appli : on reprend la session
                 self.history.pop(0)
                 self.session.start = last["start"]
                 self.session.temp_max = last.get("temp_max") or 0.0
-        elif s and (now - s.last_seen > GRACE or
+        elif s and (now - s.last_seen > _grace() or
                     (now - s.last_seen > GONE and not _alive(s.pid))):
             # processus du jeu disparu : fin tout de suite (récapitulatif sans attendre) ;
             # sinon alt-tab ou chargement, on attend GRACE

@@ -1,5 +1,6 @@
 """Alertes de seuil (températures, mémoire, disques), avec temporisation et hystérésis pour
 ne pas clignoter autour du seuil."""
+from . import settings
 
 SUSTAIN = 5        # s au-dessus du seuil avant de déclencher
 HYSTERESIS = 5     # l'alerte tombe quand la valeur repasse sous seuil - 5
@@ -56,7 +57,7 @@ class AlertMonitor:
                 first = self._over.setdefault(key, now)
                 if key in self.active:
                     self.active[key]["value"] = value
-                elif now - first >= SUSTAIN:
+                elif now - first >= settings.num(cfg, "alert_sustain_seconds"):
                     self.active[key] = {"label": label, "value": value, "unit": unit,
                                         "threshold": th}
                     self.newest, self.last_new = key, now

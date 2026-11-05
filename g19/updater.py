@@ -69,7 +69,7 @@ class Updater:
                     settings.save_state(update_status={"text": self.status, "at": time.time()})
                 except Exception:
                     pass
-            self._wake.wait(CHECK_EVERY)
+            self._wake.wait(max(60, settings.get("update_check_minutes") * 60))
 
     def _check(self, manual=False):
         if not (self.dir / ".git").exists():

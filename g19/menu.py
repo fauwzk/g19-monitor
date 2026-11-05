@@ -37,6 +37,61 @@ THEME_ITEMS = [
 ]
 
 SETTINGS_ITEMS = [
+    (None, "Affichage", "title", None),
+    ("fps", "Fluidité (images/s)", "int", (5, 60, 5)),
+    ("animations", "Animations (pages, menus)", "bool", None),
+    ("animation_style", "    style entre les pages", "choice", ANIM_STYLES),
+    ("animation_speed", "    vitesse", "choice", ANIM_SPEEDS),
+    ("screen_list_style", "Liste des écrans (Menu)", "choice", SCREEN_LISTS),
+    ("headset_mic", "Micro du casque (barre du haut)", "bool", None),
+    ("volume_popup", "Fenêtre de volume", "bool", None),
+    ("mic_popup", "Fenêtre micro coupé / activé", "bool", None),
+    ("volume_popup_seconds", "Durée fenêtre de volume", "choice",
+     settings.CHOICES["volume_popup_seconds"]),
+    ("claude_strip_seconds", "Claude au repos après", "choice",
+     settings.CHOICES["claude_strip_seconds"]),
+    ("ping_target", "Cible du ping (Réseau)", "choice",
+     [("1.1.1.1", "Cloudflare 1.1.1.1"), ("8.8.8.8", "Google 8.8.8.8"),
+      ("9.9.9.9", "Quad9 9.9.9.9")]),
+    (None, "Pages", "title", None),
+    ("remember_page", "Rouvrir sur la dernière page", "bool", None),
+    ("game_page", "Page au lancement d'un jeu", "choice", GAME_PAGES),
+    ("game_recap", "Récap de fin de partie", "bool", None),
+    ("auto_cycle_seconds", "Pages qui défilent seules", "choice",
+     settings.CHOICES["auto_cycle_seconds"]),
+    ("return_page_minutes", "Retour à une page après", "choice",
+     settings.CHOICES["return_page_minutes"]),
+    ("menu_close_seconds", "Menu fermé tout seul après", "choice",
+     settings.CHOICES["menu_close_seconds"]),
+    (None, "PC au repos", "title", None),
+    ("idle_screen", "Horloge PC au repos", "bool", None),
+    ("idle_minutes", "    inactif après", "choice", settings.CHOICES["idle_minutes"]),
+    ("idle_style", "    affichage", "choice", list(settings.IDLE_STYLES.items())),
+    ("idle_on_lock", "    dès le verrouillage", "bool", None),
+    ("idle_dim_minutes", "    assombri après", "choice", settings.CHOICES["idle_dim_minutes"]),
+    ("idle_off_minutes", "    écran noir après", "choice", settings.CHOICES["idle_off_minutes"]),
+    ("away_summary", "Résumé au retour", "bool", None),
+    (None, "Bandeaux", "title", None),
+    ("toast_seconds", "Durée d'affichage", "choice", settings.CHOICES["toast_seconds"]),
+    ("discord_toasts", "Message Discord", "bool", None),
+    ("voice_toasts", "Arrivée / départ en vocal", "bool", None),
+    ("win_toasts", "Notifs Windows", "bool", None),
+    ("media_toasts", "Changement de média", "bool", None),
+    ("pause_toasts", "Lecture / pause", "bool", None),
+    ("steam_toasts", "Ami Steam (connexion, jeu)", "bool", None),
+    ("achievements", "Succès Steam en jeu", "bool", None),
+    ("stream_toasts", "Connexion streaming", "bool", None),
+    ("claude_reminders", "Rappel : Claude attend", "bool", None),
+    ("rain_toasts", "Pluie dans peu de temps", "bool", None),
+    ("device_toasts", "Périphérique connecté", "bool", None),
+    ("driver_toasts", "Nouveau pilote AMD", "bool", None),
+    ("docker_toasts", "Conteneur Docker en panne", "bool", None),
+    ("fuel_toasts", "Carburant en rupture / de retour", "bool", None),
+    ("page_toasts", "Page de nouveau dispo", "bool", None),
+    (None, "Alertes", "title", None),
+    ("alerts_on", "Alertes de seuil", "bool", None),
+    ("sys_alerts", "Alertes système (MAJ, disque)", "bool", None),
+    ("disk_free_gb", "    disque plein sous (Go)", "int", (1, 200, 1)),
     (None, "Rétroéclairage", "title", None),
     ("backlight", "Voyant clavier", "bool", None),
     ("backlight_alerts", "Alertes · rouge", "bool", None),
@@ -57,44 +112,6 @@ SETTINGS_ITEMS = [
     ("test_notif", "Tester · blanc (notif Windows)", "action", ("test", "notif")),
     ("test_whatsapp", "Tester · vert (WhatsApp)", "action", ("test", "whatsapp")),
     ("test_snap", "Tester · jaune (Snapchat)", "action", ("test", "snap")),
-    (None, "Écran", "title", None),
-    ("discord_toasts", "Bandeau Discord", "bool", None),
-    ("win_toasts", "Bandeau notifs Windows", "bool", None),
-    ("media_toasts", "Bandeau changement de média", "bool", None),
-    ("pause_toasts", "Bandeau lecture / pause", "bool", None),
-    ("device_toasts", "Bandeau périphérique connecté", "bool", None),
-    ("voice_toasts", "Bandeau arrivée / départ en vocal", "bool", None),
-    ("steam_toasts", "Bandeau ami Steam (connexion, jeu)", "bool", None),
-    ("achievements", "Succès Steam en jeu", "bool", None),
-    ("stream_toasts", "Bandeau connexion streaming", "bool", None),
-    ("docker_toasts", "Bandeau conteneur Docker en panne", "bool", None),
-    ("fuel_toasts", "Bandeau carburant en rupture / de retour", "bool", None),
-    ("rain_toasts", "Bandeau pluie dans peu de temps", "bool", None),
-    ("claude_reminders", "Rappel : Claude attend depuis 10 min", "bool", None),
-    ("page_toasts", "Bandeau page de nouveau dispo", "bool", None),
-    ("driver_toasts", "Bandeau nouveau pilote AMD", "bool", None),
-    ("sys_alerts", "Alertes système (MAJ, disque)", "bool", None),
-    ("disk_free_gb", "    disque plein sous (Go)", "int", (1, 200, 1)),
-    ("game_recap", "Récap de fin de partie", "bool", None),
-    ("idle_screen", "Horloge PC au repos", "bool", None),
-    ("idle_minutes", "    inactif après (min)", "int", (1, 120, 1)),
-    ("away_summary", "Résumé au retour", "bool", None),
-    ("alerts_on", "Alertes de seuil", "bool", None),
-    ("toast_seconds", "Durée des bandeaux (s)", "int", (2, 30, 1)),
-    ("claude_strip_seconds", "Claude au repos après (s)", "int", (0, 600, 5)),
-    ("game_page", "Page au lancement d'un jeu", "choice", GAME_PAGES),
-    ("remember_page", "Rouvrir sur la dernière page", "bool", None),
-    ("fps", "Fluidité (images/s)", "int", (5, 60, 5)),
-    ("animations", "Animations (pages, menus)", "bool", None),
-    ("headset_mic", "Micro du casque (barre du haut)", "bool", None),
-    ("volume_popup", "Fenêtre de volume", "bool", None),
-    ("mic_popup", "Fenêtre micro coupé / activé", "bool", None),
-    ("animation_style", "    style entre les pages", "choice", ANIM_STYLES),
-    ("animation_speed", "    vitesse", "choice", ANIM_SPEEDS),
-    ("screen_list_style", "Liste des écrans (Menu)", "choice", SCREEN_LISTS),
-    ("ping_target", "Cible du ping (Réseau)", "choice",
-     [("1.1.1.1", "Cloudflare 1.1.1.1"), ("8.8.8.8", "Google 8.8.8.8"),
-      ("9.9.9.9", "Quad9 9.9.9.9")]),
     (None, "Réglage de l'écran", "title", None),
     ("screen_brightness", "Luminosité (%)", "int", (50, 150, 5)),
     ("screen_contrast", "Contraste (%)", "int", (50, 150, 5)),
@@ -129,6 +146,35 @@ SETTINGS_ITEMS = [
 ]
 VISIBLE = 8
 
+# en tête du menu, juste après le titre : ce qu'on change le plus souvent (mêmes réglages que
+# plus bas, avec un libellé qui se suffit à lui-même)
+QUICK = [
+    ("theme", "Thème"),
+    ("screen_brightness", "Luminosité de l'écran (%)"),
+    ("night_mode", "Mode nuit"),
+    ("dnd", "Ne pas déranger (Windows)"),
+    ("idle_screen", "Écran de repos"),
+    ("auto_cycle_seconds", "Pages qui défilent seules"),
+    ("backlight", "Voyant clavier"),
+    ("discord_toasts", "Bandeaux Discord"),
+    ("win_toasts", "Bandeaux notifs Windows"),
+    ("fan_profile", "Ventilateurs"),
+]
+
+
+def quick_items(dnd=False):
+    """Section « Accès rapide », reprise des lignes du menu complet."""
+    by_key = {it[0]: it for it in THEME_ITEMS + SETTINGS_ITEMS if it[0]}
+    out = [(None, "Accès rapide", "title", None)]
+    for key, label in QUICK:
+        if key == "dnd":
+            if dnd:
+                out.append(("dnd", label, "bool", None))
+            continue
+        _k, _l, kind, opts = by_key[key]
+        out.append((key, label, kind, opts))
+    return out
+
 
 class SettingsMenu:
     def __init__(self):
@@ -139,6 +185,7 @@ class SettingsMenu:
         self.real_fps = None
         self.update_status = ""  # dernière vérification des mises à jour (affichée en tête)
         self.audio_active = None  # profil audio en cours (indice), affiché « actif »
+        self.dnd = None           # « Ne pas déranger » de Windows : None si indisponible
 
     def show(self, cfg, page_action=None, audio_profiles=None, game=None):
         """Ouvre le menu ; `page_action` = (libellé, cible, args) lié à la page affichée ;
@@ -160,17 +207,20 @@ class SettingsMenu:
                                   else audio_profiles) if p.get("name")]
         if game:
             head.append(("ignore_game", f"Pas un jeu : {game}", "action", ("ignore_game", game)))
-        self.items = (head + THEME_ITEMS + (profiles if len(profiles) > 1 else [])
+        self.items = (head + quick_items(self.dnd is not None)
+                      + (profiles if len(profiles) > 1 else [])
                       + ([(None, "Ouvrir", "title", None)] + launch if launch else [])
-                      + SETTINGS_ITEMS)
+                      + THEME_ITEMS + SETTINGS_ITEMS)
         self.selectable = [i for i, it in enumerate(self.items) if it[2] != "title"]
-        # curseur sur le thème à l'ouverture (la vérification est juste au-dessus)
+        # curseur sur l'accès rapide à l'ouverture (la vérification est juste au-dessus)
         self.index = next(i for i, it in enumerate(self.items) if it[0] == "theme")
         self.top = 0
         self.open = True
 
     def value_text(self, item, cfg):
         key, _label, kind, opts = item
+        if key == "dnd":
+            return "oui" if self.dnd else "non"
         if kind == "bool":
             return "oui" if cfg.get(key) else "non"
         if kind == "int":
@@ -201,6 +251,9 @@ class SettingsMenu:
             return None, None
         key, _label, kind, opts = self.items[self.index]
         step = -1 if button == "left" else 1
+        if key == "dnd":                # pas un réglage : l'état de Windows
+            self.dnd = not self.dnd     # affiché tout de suite ; Windows suit
+            return None, ("dnd",)
         new = dict(cfg)
         if kind == "bool":
             new[key] = not cfg.get(key)
