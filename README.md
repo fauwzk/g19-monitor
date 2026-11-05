@@ -420,6 +420,10 @@ touchent.
 
 ## Développement
 
+Fonctionnement technique détaillé (boucle, sources, rendu, formats, gardien, mises à jour) :
+**[Windows](docs/FONCTIONNEMENT_WINDOWS.md)** · **[Linux](docs/FONCTIONNEMENT_LINUX.md)** (branche
+`linux`).
+
 | | |
 |---|---|
 | `g19_monitor.py` | boucle principale : capteurs, touches, rendu, LCD |
