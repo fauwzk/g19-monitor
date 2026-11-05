@@ -47,17 +47,28 @@ Touches de l'écran gérées par l'appli : `menu`, `ok`, `cancel`, `up`, `down`,
 
 La boucle de `run()` dessine une image, la dépose dans `LcdThread` et repart sans attendre le clavier ; le fil d'envoi parle seul au G19, images et touches comprises.
 
-```
-Boucle principale  (rendu Pillow 320×240, retouches, tramage)
-      │ show(image)                               ▲ pressed() : touches nouvelles
-      ▼                                           │
-LcdThread  (fil « écran G19 » : garde la dernière image, relit les touches ~10 ms)
-      │
-      ├─ Windows : G19LCD ──▶ LogitechLcd.dll ──▶ LGS (LCore.exe) ──▶ USB ──▶ G19
-      │            (BGRA 32 bits, masques de touches)  (convertit en RGB565)
-      │
-      └─ Linux   : G19USB ──▶ pyusb / libusb ──▶ endpoint 0x02 (images) ──▶ G19
-                   (trame 512 + RGB565)          endpoint 0x81 (touches) ◀── G19
+```mermaid
+flowchart LR
+    loop["<b>Boucle principale</b><br/>rendu Pillow 320 × 240<br/>retouches et tramage"]
+    thread["<b>LcdThread</b><br/>fil « écran G19 »<br/>garde la dernière image<br/>relit les touches ~10 ms"]
+    loop -- "show(image)" --> thread
+    thread -. "pressed()" .-> loop
+    subgraph win["Windows · branche main"]
+        g19lcd["<b>G19LCD</b><br/>BGRA 32 bits"] --> dll["<b>LogitechLcd.dll</b>"] --> lgs["<b>LGS</b><br/>LCore.exe<br/>→ RGB565"]
+    end
+    subgraph lin["Linux · branche linux"]
+        g19usb["<b>G19USB</b><br/>en-tête 512<br/>+ RGB565"] --> libusb["<b>pyusb</b><br/>libusb"]
+    end
+    thread --> g19lcd
+    thread --> g19usb
+    kb(["<b>Clavier G19</b><br/>046d:c229"])
+    lgs -- "USB" --> kb
+    libusb -- "0x02 images" --> kb
+    kb -. "0x81 touches" .-> libusb
+    classDef core fill:#e7f1fb,stroke:#2f6fb3,stroke-width:2px,color:#111
+    classDef device fill:#e5f4e4,stroke:#3a8a3a,stroke-width:2px,color:#111
+    class thread core
+    class kb device
 ```
 
 Seule la couche sous `LcdThread` change d'une branche à l'autre ; tout ce qui suit est le même code sur `main` et `linux` (`run()` dans `g19_monitor.py`).
@@ -78,6 +89,31 @@ Seule la couche sous `LcdThread` change d'une branche à l'autre ; tout ce qui s
 #### Un tour de boucle
 
 La boucle tourne tant que `quit_requested()` est faux. Chaque tour suit le même ordre ; chaque étape est chronométrée par `LoopClock` (nom de l'étape entre parenthèses).
+
+```mermaid
+flowchart TD
+    A["1 · Battement<br/>dog.alive(now)"] --> B["2 · Tâches périodiques<br/>0,25 s · 0,5 s · 1 s · 5 s · 60 s"]
+    B --> C{"3 · Icône :<br/>relancer ou quitter ?"}
+    C -- non --> D["4 · Pages visibles et jeu"]
+    D --> E["5 · Touches<br/>G19 + utilitaire"]
+    E --> F["6 · État dérivé"]
+    F --> G["7 · Rétroéclairage"]
+    G --> H["8 · Audio"]
+    H --> I["9 · Rendu<br/>un seul écran, transition, bandeau"]
+    I --> J["10 · Retouches<br/>adjust · night.dim · dither"]
+    J --> K{"11 · 0,9 × lcd_step écoulé<br/>depuis la dernière image ?"}
+    K -- oui --> L["lcd.show(image)<br/>vers LcdThread"]
+    K -- non --> M
+    L --> M["12 · Aperçu<br/>mirror.write()"]
+    M --> N["13 · Attente<br/>jusqu'à next_tick ou réveil volume"]
+    N --> A
+    C -- oui --> Z(["Sortie de la boucle<br/>fermeture protégée, relance éventuelle"])
+    B -. "code modifié et compilé" .-> Z
+    classDef send fill:#e7f1fb,stroke:#2f6fb3,stroke-width:2px,color:#111
+    classDef out fill:#fbebeb,stroke:#b33a3a,stroke-width:2px,color:#111
+    class L send
+    class Z out
+```
 
 1. **Battement** : `now = time.time()`, puis `dog.alive(now)` pour le chien de garde (« attente »).
 2. **Tâches périodiques** : chacune a sa propre période, voir le tableau ci-dessous (« tâches : … »).
@@ -188,6 +224,31 @@ Sous Windows, l'appli n'ouvre jamais l'USB elle-même : elle est un client du SD
 | Pilote | pilote HID / USB de Logitech | transport vers `046d:c228` et `046d:c229` |
 
 Conséquences directes : LGS doit tourner, ses réglages comptent (option LED SDK), et plusieurs applets peuvent se partager l'écran (LGS fait la rotation). Le format réel des trames USB n'est jamais vu par l'appli côté Windows.
+
+Échanges pour une image et les touches :
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Appli (LcdThread)
+    participant D as LogitechLcd.dll
+    participant L as LGS (LCore.exe)
+    participant K as G19
+    A->>D: LogiLcdInit("PC Monitor", 2)
+    D->>L: enregistre l'applet couleur
+    loop à chaque image
+        A->>D: LogiLcdColorSetBackground(BGRA, 307 200 octets)
+        A->>D: LogiLcdUpdate()
+        D->>L: image de l'applet
+        L->>K: trame RGB565 (USB)
+    end
+    loop toutes les ~10 ms
+        K-->>L: état des touches
+        A->>D: LogiLcdIsButtonPressed(masque) × 7
+        D-->>A: vrai / faux
+    end
+    A->>D: LogiLcdShutdown()
+```
 
 ### SDK LCD : `LogitechLcd.dll`
 
@@ -392,6 +453,32 @@ Sous Linux, aucun logiciel Logitech : l'appli réserve elle-même l'interface US
 
 Dépendances (Arch) : `python-pyusb`, `python-numpy`, `python-pillow`. `G19USB` a exactement l'interface de `G19LCD` (`show`, `update`, `pressed`, `close`, `connected`, `sent`) : la boucle principale et `LcdThread` ne changent pas.
 
+Échanges pour une image et les touches :
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Appli (LcdThread)
+    participant U as pyusb / libusb
+    participant K as G19 (046d:c229)
+    A->>U: find · detach_kernel_driver(0) · claim_interface(0)
+    loop à chaque image
+        Note right of A: en-tête 512 + RGB565<br/>par colonne, 154 112 octets
+        A->>U: write(0x02, trame, timeout=1000)
+        U->>K: transfert en masse
+    end
+    loop toutes les ~10 ms
+        A->>U: read(0x81, 2, timeout=10)
+        alt une touche a changé
+            K-->>U: 2 octets, un bit par touche
+            U-->>A: état des touches tenues
+        else rien de nouveau
+            U-->>A: délai dépassé (ignoré)
+        end
+    end
+    A->>U: release_interface · dispose_resources
+```
+
 ### Ouverture de l'écran USB
 
 `G19USB.__init__` fait, dans l'ordre :
@@ -422,6 +509,16 @@ Une image = **154 112 octets** écrits en un seul transfert en masse sur l'endpo
 | 16 | 240 | octets `0x10`, `0x11` … `0xFF` |
 | 256 | 256 | octets `0x00`, `0x01` … `0xFF` |
 | 512 | 153 600 | 76 800 pixels RGB565, `uint16` petit-boutiste |
+
+```mermaid
+flowchart LR
+    h1["<b>octets 0–15</b><br/>commande<br/>16 octets"] --> h2["<b>16–255</b><br/>0x10 … 0xFF<br/>240 octets"] --> h3["<b>256–511</b><br/>0x00 … 0xFF<br/>256 octets"] --> px["<b>512–154 111</b><br/>76 800 pixels RGB565<br/>colonne par colonne<br/>153 600 octets"]
+    px --> bits["<b>un pixel = uint16 petit-boutiste</b><br/>bits 15–11 : R ≫ 3<br/>bits 10–5 : G ≫ 2<br/>bits 4–0 : B ≫ 3"]
+    classDef head fill:#f9eeda,stroke:#b8862b,color:#111
+    classDef pix fill:#e7f1fb,stroke:#2f6fb3,color:#111
+    class h1,h2,h3 head
+    class px,bits pix
+```
 
 Dans la commande, les octets 11–12 (`3F 01`) et 13–14 (`EF 00`) se lisent en petit-boutiste 319 et 239 : vraisemblablement les bornes de la fenêtre dessinée (x 0–319, y 0–239). Le sens des autres octets n'est pas documenté dans le code ; l'en-tête est envoyé tel quel à chaque image (constante `HEADER`).
 
@@ -501,6 +598,22 @@ Le clavier ne connaît qu'une couleur fixe. `LogiLedInit()` démarre un fil « r
 | --- | --- | --- |
 | `LogiLedFlashLighting` | 1 la première moitié, 0 la seconde | intervalle en ms (500 par défaut, 100 au minimum) |
 | `LogiLedPulseLighting` | 0,15 + 0,85 × (0,5 − 0,5 cos 2π·phase) | idem |
+
+```mermaid
+sequenceDiagram
+    participant B as Backlight (fil, 20 ms)
+    participant G as G19Led (fil, 30 ms)
+    participant H as /dev/hidrawN
+    participant K as G19 (046d:c228, interface 1)
+    B->>G: LogiLedPulseLighting(r, g, b, 0, ms)
+    loop toutes les 30 ms
+        Note over G: k = facteur de la phase
+        G->>H: ioctl(HIDIOCSFEATURE(4), [7, r·k, g·k, b·k])
+        H->>K: rapport HID feature 7
+    end
+    B->>G: LogiLedSetLighting(r, g, b)
+    G->>H: ioctl(…, [7, r, g, b])
+```
 
 `LogiLedSetLighting` arrête l'effet puis envoie la couleur. `LogiLedSaveCurrentLighting` ne fait rien et `LogiLedRestoreLighting` remet du blanc (100, 100, 100) : le clavier ne dit pas sa couleur actuelle. `LogiLedSetTargetDevice` est sans effet.
 
