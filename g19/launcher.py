@@ -61,6 +61,8 @@ def page_action(page, c):
         return "Téléchargements Steam", "steam://open/downloads", ""
     if page == "audio":
         return "Paramètres son", "ms-settings:sound", ""
+    if page == "procs":
+        return "Gestionnaire des tâches", "taskmgr.exe", ""
     if page == "vpn":
         return "Console Tailscale", "https://login.tailscale.com/admin/machines", ""
     if page == "weather":

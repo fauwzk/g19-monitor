@@ -410,6 +410,9 @@ class Ctx:
     docker: object = None        # docker_mon.DockerMonitor
     mirror: object = None        # screencap.ScreenMirror (page Écran PC)
     docker_scroll: int = 0
+    procs: object = None         # procs.ProcessMonitor : gestionnaire des tâches
+    proc_sel: int = 0            # ligne choisie (-1 : le tri, en tête)
+    proc_confirm: object = None  # groupe dont on demande la fin de tâche
     fuel: object = None          # fuel.FuelMonitor : prix des carburants (Home Assistant)
     agenda: object = None        # agenda.Agenda : Google Agenda (adresse iCal)
     home: object = None          # home.Home : appareils Home Assistant (page Maison)
@@ -1816,6 +1819,107 @@ def _docker_row(d, x, y):
         if memf > 0.01:
             d.rounded_rectangle((W - 14 - bar, y + 21, W - 14 - bar + bar * min(memf, 1),
                                  y + 27), 3, fill=load_color(memf * 100, GPU_C))
+
+
+PROC_ROWS, PROC_ROW = 8, 21
+PROC_TOP = 50
+ICON_TASKS = "\uE9D9"
+
+
+def page_procs(img, d, c, t):
+    """Gestionnaire des tâches : applis regroupées par nom, CPU et mémoire ; ▲▼ pour
+    choisir, OK pour terminer (avec confirmation), OK sur le tri pour en changer."""
+    from .procs import SORT_LABELS
+    pm = c.procs
+    groups = list(pm.groups) if pm else []
+    if not groups:
+        empty_state(d, ICON_TASKS, "Processus", "relevé en cours…")
+        return
+    c.proc_sel = max(-1, min(c.proc_sel, len(groups) - 1))
+    # en-tête : le tri (choisi avec ▲ tout en haut) et les totaux
+    on_sort = c.proc_sel == -1
+    label = f"Tri : {SORT_LABELS[pm.sort]}"
+    lw = d.textlength(label, font=font(11, True)) + 26
+    box = (6, 28, 6 + lw, 44)
+    if on_sort:
+        d.rounded_rectangle(box, 5, fill=dim(ACCENT, 0.25), outline=ACCENT)
+    d.text((14, 36), label, font=font(11, True), fill=TEXT if on_sort else MUTED, anchor="lm")
+    d.text((box[2] - 9, 36), "▾", font=font(10, True), fill=ACCENT, anchor="mm")
+    d.text((W - 10, 36), f"CPU {pm.total_cpu:.0f} % · RAM {pm.total_mem:.1f} Go · "
+           f"{pm.count} proc.", font=font(10), fill=MUTED, anchor="rm")
+
+    sel = max(0, c.proc_sel)
+    scroll = min(max(0, sel - PROC_ROWS // 2), max(0, len(groups) - PROC_ROWS))
+    cpu_max = max(10.0, max(g["cpu"] for g in groups))
+    sort = pm.sort
+
+    def draw_row(layer, ld, idx, y):
+        g = groups[idx]
+        chosen = idx == c.proc_sel
+        box = (6, y + 1, W - 6, y + PROC_ROW - 1)
+        if chosen:
+            ld.rounded_rectangle(box, 5, fill=dim(ACCENT, 0.22), outline=ACCENT)
+        elif idx % 2:
+            ld.rounded_rectangle(box, 5, fill=PANEL)
+        cy = y + PROC_ROW / 2
+        name = g["name"][:-4] if g["name"].lower().endswith(".exe") else g["name"]
+        f = font(11, True)
+        cnt = f" ×{g['count']}" if g["count"] > 1 else ""
+        nm = fit(ld, name, f, 150 - ld.textlength(cnt, font=font(9)))
+        locked = pm.protected(g)
+        ld.text((14, cy), nm, font=f, fill=MUTED if locked else TEXT, anchor="lm")
+        if cnt:
+            ld.text((14 + ld.textlength(nm, font=f) + 2, cy + 1), cnt, font=font(9),
+                    fill=MUTED, anchor="lm")
+        # CPU : valeur et petite barre ; mémoire à droite
+        bx = 176
+        frac = min(1.0, g["cpu"] / cpu_max)
+        ld.rounded_rectangle((bx, cy - 2, bx + 40, cy + 2), 2, fill=TRACK)
+        if frac > 0.02:
+            ld.rounded_rectangle((bx, cy - 2, bx + 40 * frac, cy + 2), 2,
+                                 fill=load_color(g["cpu"], ACCENT))
+        ld.text((bx + 70, cy), f"{g['cpu']:.1f} %" if g["cpu"] < 10 else f"{g['cpu']:.0f} %",
+                font=font(10, sort == "cpu"), fill=load_color(g["cpu"], TEXT), anchor="rm")
+        ld.text((W - 12, cy), fmt_bytes(g["mem"]), font=font(10, sort == "mem"),
+                fill=TEXT if sort == "mem" else MUTED, anchor="rm")
+
+    smooth_rows(img, "proc_scroll", scroll, len(groups), PROC_TOP,
+                PROC_TOP + PROC_ROWS * PROC_ROW, PROC_ROW, draw_row, t)
+    if on_sort:
+        hints = [("▲▼", "choisir"), ("OK", "changer le tri")]
+    else:
+        hints = [("▲▼", "choisir"), ("OK", "fin de tâche")]
+    key_hints(d, 230, hints)
+    if len(groups) > PROC_ROWS:
+        d.text((W - 8, 230), f"{sel + 1}/{len(groups)}", font=font(9), fill=MUTED,
+               anchor="rm")
+    if c.proc_confirm:
+        _proc_confirm(img, c.proc_confirm, pm)
+
+
+def _proc_confirm(img, g, pm):
+    """Fenêtre de confirmation de fin de tâche, par-dessus la liste."""
+    d = Draw(img)
+    x0, y0, x1, y1 = 30, 70, W - 30, 172
+    drop_shadow(img, (x0, y0, x1, y1), 10, blur=6, dy=4)
+    locked = pm.protected(g)
+    panel(d, (x0, y0, x1, y1), 10, outline=dim(MUTED if locked else HOT, 0.8))
+    name = g["name"]
+    if locked:
+        icon(d, ICON_LOCK, W // 2, y0 + 24, 20, MUTED)
+        d.text((W // 2, y0 + 50), fit(d, f"{name} est protégé", font(13, True), x1 - x0 - 20),
+               font=font(13, True), fill=TEXT, anchor="mm")
+        d.text((W // 2, y0 + 70), "nécessaire à Windows ou au G19", font=font(10),
+               fill=MUTED, anchor="mm")
+        key_hints(d, y1 - 14, [("Annuler", "retour")], "center")
+        return
+    d.text((W // 2, y0 + 22), "Terminer ?", font=font(11, True), fill=HOT, anchor="mm")
+    d.text((W // 2, y0 + 44), fit(d, name, font(15, True), x1 - x0 - 20), font=font(15, True),
+           fill=TEXT, anchor="mm")
+    n = g["count"]
+    d.text((W // 2, y0 + 64), f"{n} processus · {fmt_bytes(g['mem'])} · CPU {g['cpu']:.0f} %",
+           font=font(10), fill=MUTED, anchor="mm")
+    key_hints(d, y1 - 14, [("OK", "terminer"), ("Annuler", "non")], "center", color=HOT)
 
 
 FUEL_ROWS = 5
@@ -3352,7 +3456,7 @@ def choosing(c, page):
     """Un choix est ouvert sur la page (sortie audio, panneau d'appel Discord) : OK et
     Annuler lui appartiennent, pas au bandeau affiché par-dessus."""
     return (page == "audio" and c.audio_cursor is not None) or \
-        (page == "discord" and c.discord_cursor is not None)
+        (page == "discord" and c.discord_cursor is not None) or page == "procs"
 
 
 def current_toast(c, page, t):
@@ -3867,6 +3971,8 @@ def render(page, c, t=None, post=True, toast=True):
         page_batteries(d, c, t)
     elif page == "docker":
         page_docker(d, c, t)
+    elif page == "procs":
+        page_procs(img, d, c, t)
     elif page == "fuel":
         page_fuel(d, c, t)
     elif page == "agenda":

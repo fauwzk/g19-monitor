@@ -51,6 +51,7 @@ try:
     from g19.updater import Updater
     from g19.amd_driver import AmdDriver
     from g19.docker_mon import DockerMonitor
+    from g19.procs import ProcessMonitor
     from g19.fuel import FuelMonitor
     from g19.dnd import DoNotDisturb
     from g19.agenda import Agenda
@@ -155,7 +156,7 @@ def make_ctx():
                history=History(), batteries=batteries, devices=DeviceWatcher(batteries),
                net=Pinger(lambda: settings.current().get("ping_target")),
                sysw=SystemWatch(settings.current), git=GitStatus(), away=Away(),
-               streaming=Streaming(), docker=DockerMonitor(), mirror=ScreenMirror(),
+               streaming=Streaming(), docker=DockerMonitor(), procs=ProcessMonitor(), mirror=ScreenMirror(),
                fuel=FuelMonitor(), dnd=DoNotDisturb(),
                agenda=Agenda(lambda: settings.current().get("agenda_remind", 10)),
                home=Home(lambda: settings.current().get("ha_entities") or []),
@@ -470,6 +471,8 @@ def close_subview(c, page):
         guarded("état", settings.save_state, gpu_view=c.gpu_view)
     elif page == "history" and c.history_view != "temp":
         c.history_view = "temp"
+    elif page == "procs" and c.proc_confirm:
+        c.proc_confirm = None           # Annuler referme la confirmation de fin de tâche
     else:
         return False
     return True
@@ -990,6 +993,21 @@ def run():
                                       pages)
                 elif page == "docker" and b in ("up", "down"):
                     c.docker_scroll += 1 if b == "down" else -1
+                elif page == "procs" and c.proc_confirm and b == "ok":
+                    if not c.procs.protected(c.proc_confirm):
+                        c.procs.kill(c.proc_confirm)
+                        c.saved_event = c.procs.event
+                    c.proc_confirm = None
+                elif page == "procs" and c.proc_confirm:
+                    pass                    # confirmation ouverte : ▲▼ ne bougent rien
+                elif page == "procs" and b in ("up", "down"):
+                    c.proc_sel = max(-1, min(c.proc_sel + (1 if b == "down" else -1),
+                                             len(c.procs.groups) - 1))
+                elif page == "procs" and b == "ok" and c.proc_sel == -1:
+                    c.procs.next_sort()
+                elif page == "procs" and b == "ok" and c.procs.groups:
+                    g = c.procs.groups[min(c.proc_sel, len(c.procs.groups) - 1)]
+                    c.proc_confirm = {**g, "pids": list(g["pids"])}   # figé à l'instant
                 elif page == "history" and b == "ok":
                     c.history_view = "load" if c.history_view == "temp" else "temp"
                 elif page == "steam" and b in ("up", "down"):
@@ -1051,6 +1069,10 @@ def run():
                 c.discord.mark_read()
             if c.home:
                 c.home.show(page == "home" and not cover.open and not menu.open)
+            if c.procs:
+                c.procs.show(page == "procs" and not cover.open and not menu.open)
+            if page != "procs":
+                c.proc_confirm = None
             if page != "audio":
                 c.audio_cursor = None
             if page != "discord":

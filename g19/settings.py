@@ -54,6 +54,7 @@ PAGE_TITLES = {
     "batteries": "Batteries",
     "network": "Réseau",
     "docker": "Docker",
+    "procs": "Processus",
     "fuel": "Carburant",
     "agenda": "Agenda",
     "home": "Maison",
